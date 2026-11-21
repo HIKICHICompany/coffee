@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>一杯の記録帳</title>
+<meta name="description" content="お店の一杯と、家の一杯を記録するテイスティング帳">
+<meta name="theme-color" content="#F5F6F4">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="一杯の記録帳">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-mode="view">
+<main id="view"></main>
+
+<button type="button" id="newBtn" class="fab" aria-label="新しく記録する"><span></span></button>
+
+<nav class="tabbar" aria-label="画面の切り替え">
+  <a href="#/" aria-current="page"><span class="ti list"></span>記録</a>
+  <a href="#/map"><span class="ti map"></span>味の地図</a>
+  <a href="#/settings"><span class="ti gear"></span>設定</a>
+</nav>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-body" role="dialog" aria-label="何を記録しますか">
+    <p class="sheet-title">どの一杯を記録しますか</p>
+    <a href="#/new/cafe" class="choice cafe"><span class="choice-ico"></span><strong>お店の一杯</strong><small>カフェ・喫茶店・専門店で飲んだ</small></a>
+    <a href="#/new/home" class="choice home"><span class="choice-ico"></span><strong>家の一杯</strong><small>自分で淹れた・自家焙煎した</small></a>
+  </div>
+</div>
+
+<div id="full" class="full" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

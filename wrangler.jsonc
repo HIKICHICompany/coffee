@@ -1,0 +1,16 @@
+{
+  // Cloudflare Worker の設定
+  "name": "ippai",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    // 読み取りに使うモデル（変えたいときだけ直す）
+    "MODEL": "claude-sonnet-5-5"
+  }
+  // 秘密の値（ANTHROPIC_API_KEY, APP_TOKEN）はここに書かず、
+  // Cloudflare の画面の「設定 → 変数とシークレット」で登録する。
+}
