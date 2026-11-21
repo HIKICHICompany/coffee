@@ -1,4 +1,4 @@
-// 一杯の記録帳：Cloudflare Worker
+// 珈琲テイスティングノート：Cloudflare Worker
 // 画面（public/）はそのまま配り、/api/ だけここで処理する。
 //   GET  /api/nearby?lat=..&lon=..  近くのコーヒー店（OpenStreetMap）
 //   POST /api/read                   メニュー・豆の袋の写真を読み取る（Claude API）

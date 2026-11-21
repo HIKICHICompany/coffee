@@ -56,24 +56,43 @@ export const FLAVOR_ITEMS = [];
 })();
 export const ITEM_BY_ID = Object.fromEntries(FLAVOR_ITEMS.map(i => [i.id, i]));
 
-// 風味以外の専門用語（タップで選ぶ）
-export const TERM_GROUPS = [
-  { id: 'acidity', title: '酸の質', sub: 'アシディティ', terms: ['明るい', 'ジューシー', '柔らかい', 'シトリック（柑橘の酸）', 'マリック（リンゴの酸）', 'ワイニー', '鋭い', '穏やか'] },
-  { id: 'mouthfeel', title: '口あたり', sub: 'マウスフィール', terms: ['シルキー', 'ティーライク', 'クリーミー', 'シロップのよう', 'ラウンド', '重厚', '軽やか', 'ざらつき'] },
-  { id: 'finish', title: '余韻', sub: 'アフターテイスト', terms: ['長い', '短い', '甘い余韻', 'ドライ', '心地よい苦み', '酸が残る'] },
-  { id: 'impression', title: '全体の印象', sub: 'オーバーオール', terms: ['クリーン', '複雑', 'バランスがいい', '透明感', '華やか', '落ち着き', '力強い', '優しい'] },
-];
+// ---- テイスティングの項目 ----
+// 設計の土台：SCAの新しい評価方式（CVA, 2024）の「強さ」と「好み」を分ける考え方、
+// 当てはまるものを全部選ぶ方式（CATA）、カップ・オブ・エクセレンスの質の見方。
 
-// 7つの評価軸（1〜5）
+// 強さ（1〜5）。好き嫌いではなく「どれだけ感じたか」
 export const ATTRS = [
+  { id: 'aroma', name: '香り', sub: 'アロマ' },
   { id: 'acidity', name: '酸味', sub: 'アシディティ' },
   { id: 'sweetness', name: '甘さ', sub: 'スウィートネス' },
   { id: 'bitterness', name: '苦味', sub: 'ビターネス' },
   { id: 'body', name: 'コク', sub: 'ボディ' },
   { id: 'aftertaste', name: '余韻', sub: 'アフターテイスト' },
-  { id: 'clean', name: '透明感', sub: 'クリーンカップ' },
-  { id: 'balance', name: 'バランス', sub: 'バランス' },
 ];
+export const FRAGRANCE = { id: 'fragrance', name: '粉の香り', sub: 'フレグランス' };
+
+// 主な味（5つの基本の味から2つまで）
+export const MAIN_TASTES = ['甘味', '酸味', '苦味', '塩味', '旨味'];
+
+export const TERM_GROUPS = [
+  { id: 'acidity', title: '酸の質', sub: 'アシディティ', terms: ['明るい', 'ジューシー', 'シトリック（柑橘の酸）', 'マリック（リンゴの酸）', 'ワイニー（ぶどうの酸）', '柔らかい', '鋭い', '酸っぱい（いやな酸）'] },
+  { id: 'mouthfeel', title: '口あたり', sub: 'マウスフィール', terms: ['シルキー', 'ベルベット', 'シロップのよう', 'クリーミー', 'ティーライク', '軽やか', '重厚', 'ざらつき', '粉っぽい', 'オイリー', '金属っぽい', '口が渇く（ドライ）'] },
+  { id: 'finish', title: '余韻の質', sub: 'フィニッシュ', terms: ['甘い余韻', '心地よい苦み', '酸が残る', '香りが残る', 'すっと消える', '渋みが残る'] },
+  { id: 'cooling', title: '冷めてからの変化', sub: 'クーリング', terms: ['甘くなった', '酸が明るくなった', '果実感が出た', 'ほぼ変わらない', '苦味が強くなった', '雑味が出た'] },
+  { id: 'impression', title: '全体の印象', sub: 'オーバーオール', terms: ['クリーン', 'バランスがいい', '複雑', '透明感', '華やか', '落ち着き', '力強い', '優しい'] },
+];
+export const TERM_BY_ID = Object.fromEntries(TERM_GROUPS.map(g => [g.id, g]));
+
+// 香り・風味は、まず大きな分類を選び、必要なら一段細かく（CATA）
+export function catOptions() {
+  return FLAVOR_TREE.map(c => ({ id: c.id, name: c.name, color: c.color, groups: c.groups.map(g => ({ id: `${c.id}/${g.name}`, name: g.name })) }));
+}
+export function catLabel(key) {
+  const [cid, g] = key.split('/');
+  const c = FLAVOR_TREE.find(x => x.id === cid);
+  return c ? (g ? g : c.name) : key;
+}
+export function catColor(key) { return FLAVOR_TREE.find(x => x.id === key.split('/')[0])?.color || '#888'; }
 
 export const BREW_METHODS = ['ハンドドリップ', 'エスプレッソ', 'フレンチプレス', 'エアロプレス', 'サイフォン', 'ネルドリップ', '水出し', 'モカポット'];
 export const ROAST_LEVELS = ['ライト', 'シナモン', 'ミディアム', 'ハイ', 'シティ', 'フルシティ', 'フレンチ', 'イタリアン'];
@@ -108,4 +127,99 @@ export function categoryMix(ids) {
   const count = {};
   ids.forEach(id => { const it = ITEM_BY_ID[id]; if (it) count[it.cat.id] = (count[it.cat.id] || 0) + 1; });
   return FLAVOR_TREE.filter(c => count[c.id]).map(c => ({ cat: c, n: count[c.id] }));
+}
+
+// ---- 風味の円の提案 ----
+// それまでの入力（香り・風味の分類、酸の質、精製、焙煎度、産地、お店や袋の説明）から、
+// 円のどこに当たりそうかを点数にし、根拠と一緒に返す。
+const WORDS = [
+  [/チョコ/, ['ミルクチョコ', 'ダークチョコ']], [/カカオ|ココア/, ['カカオ']], [/柑橘|シトラス|citrus/i, ['レモン', 'オレンジ']],
+  [/ベリー|berry/i, ['ブルーベリー', 'ラズベリー']], [/ナッツ|nut/i, ['アーモンド', 'ヘーゼルナッツ']], [/ワイン|wine/i, ['赤ワイン']],
+  [/はちみつ|蜂蜜|ハニー|honey/i, ['ハチミツ']], [/桃|ピーチ|peach/i, ['ピーチ']], [/りんご|林檎|apple/i, ['リンゴ']],
+  [/みかん|オレンジ|orange/i, ['オレンジ']], [/苺|いちご|strawberry/i, ['ストロベリー']], [/ぶどう|葡萄|グレープ(?!フルーツ)|grape(?!fruit)/i, ['ブドウ']],
+  [/花|フローラル|floral/i, ['ジャスミン', 'ローズ']], [/黒糖|ブラウンシュガー|brown sugar/i, ['黒糖']], [/トフィー|toffee|カラメル/i, ['キャラメル']],
+  [/杏|あんず|apricot/i, ['アプリコット']], [/チェリー|さくらんぼ|cherry/i, ['チェリー']], [/スパイス|spice/i, ['シナモン']],
+  [/スモーク|smoky/i, ['スモーキー']], [/ハーブ|herb/i, ['ハーブ']], [/ラム|rum/i, ['ラム']], [/バニラ|vanilla/i, ['バニラ']],
+];
+const ORIGINS = [
+  [/エチオピア|イルガチェフェ|シダモ|グジ|ゲデオ/, { 'ジャスミン': 1.5, 'ベルガモット': 1.2, 'レモン': 1, 'ピーチ': .8, 'ブルーベリー': .6 }],
+  [/ケニア/, { 'カシス': 1.8, 'グレープフルーツ': 1.4, 'トマト': 0, 'ブラックベリー': 0, 'ラズベリー': .8 }],
+  [/ブラジル/, { 'ピーナッツ': 1.4, 'アーモンド': 1.2, 'ミルクチョコ': 1.4, 'キャラメル': .8 }],
+  [/コロンビア/, { 'キャラメル': 1, 'オレンジ': 1, 'ミルクチョコ': 1, 'リンゴ': .6 }],
+  [/グアテマラ/, { 'ミルクチョコ': 1.4, 'キャラメル': 1, 'オレンジ': .6, 'アーモンド': .6 }],
+  [/コスタリカ/, { 'ハチミツ': 1.2, 'アプリコット': 1, 'オレンジ': .6 }],
+  [/パナマ|ゲイシャ|ゲシャ|geisha|gesha/i, { 'ジャスミン': 2, 'ベルガモット': 1.5, 'ピーチ': 1.2, 'マンゴー': .6 }],
+  [/マンデリン|スマトラ|インドネシア|スラウェシ|トラジャ/, { 'ハーブ': 1.4, 'ダークチョコ': 1.2, 'シナモン': .8, '黒糖': .6 }],
+  [/ルワンダ|ブルンジ/, { '紅茶': 1.2, 'ラズベリー': 1, 'オレンジ': .6 }],
+  [/イエメン|モカ/, { 'レーズン': 1.4, '赤ワイン': 1.2, 'カカオ': .8, 'シナモン': .6 }],
+  [/ペルー|メキシコ|ホンジュラス|ニカラグア|エルサルバドル/, { 'ミルクチョコ': 1, 'キャラメル': 1, 'アーモンド': .8 }],
+  [/ハワイ|コナ/, { 'ミルクチョコ': 1, 'ヘーゼルナッツ': 1, 'ハチミツ': .6 }],
+];
+const PROCESS = {
+  'ナチュラル': { 'ブルーベリー': 1.4, 'ストロベリー': 1, 'レーズン': 1, '赤ワイン': .8 },
+  'アナエロビック': { '発酵感': 1.8, 'ラム': 1.2, '赤ワイン': 1, 'シナモン': .6 },
+  'ハニー': { 'ハチミツ': 1.4, 'アプリコット': .8, '黒糖': .6 },
+  'ウォッシュト': { 'レモン': .5, '紅茶': .5 },
+  'スマトラ式': { 'ハーブ': 1, 'スモーキー': .6, 'ダークチョコ': .6 },
+};
+const ROAST = {
+  'ライト': { 'レモン': .5, 'ジャスミン': .5 }, 'シナモン': { 'レモン': .5, 'ジャスミン': .5 },
+  'ミディアム': { 'キャラメル': .8, 'リンゴ': .4 }, 'ハイ': { 'キャラメル': 1, 'ミルクチョコ': .6 },
+  'シティ': { 'ミルクチョコ': 1.2, 'キャラメル': 1 }, 'フルシティ': { 'ミルクチョコ': 1, 'ダークチョコ': 1, '黒糖': .6 },
+  'フレンチ': { 'ダークチョコ': 1.6, 'スモーキー': 1.2, 'カカオ': 1 }, 'イタリアン': { 'ダークチョコ': 1.6, '焦げ': 1, 'スモーキー': 1.2 },
+};
+const ACID_TERMS = {
+  'シトリック（柑橘の酸）': ['レモン', 'オレンジ', 'グレープフルーツ', 'ライム'],
+  'マリック（リンゴの酸）': ['リンゴ', '洋ナシ'],
+  'ワイニー（ぶどうの酸）': ['赤ワイン', 'ブドウ'],
+};
+
+export function suggestFlavors(r) {
+  const info = r.type === 'cafe' ? (r.cafe || {}) : (r.home || {});
+  const score = {}, why = {};
+  const byName = name => FLAVOR_ITEMS.filter(i => i.name === name);
+  const add = (it, pts, reason) => { score[it.id] = (score[it.id] || 0) + pts; (why[it.id] ??= new Set()).add(reason); };
+  const addName = (name, pts, reason) => byName(name).forEach(it => add(it, pts, reason));
+
+  // 1. お店・袋の説明文（いちばん強い手がかり）
+  const text = [info.menuNotes, info.bagNotes].filter(Boolean).join(' ');
+  if (text) {
+    FLAVOR_ITEMS.forEach(it => { if (text.includes(it.name)) add(it, 5, '説明に書いてある'); });
+    WORDS.forEach(([re, names]) => { if (re.test(text)) names.forEach(n => addName(n, 3.5, '説明に書いてある')); });
+  }
+  // 2. 自分で選んだ香り・風味の分類
+  const cats = [...(r.flavorCats || []).map(k => [k, 1]), ...(r.aromaCats || []).map(k => [k, .7])];
+  const allCats = new Set([...(r.flavorCats || []), ...(r.aromaCats || [])]);
+  cats.forEach(([k, w]) => {
+    const [cid, g] = k.split('/');
+    // 細かい分類も選んであれば、大きな分類の分は重ねて数えない
+    if (!g && [...allCats].some(x => x.startsWith(cid + '/'))) return;
+    FLAVOR_ITEMS.filter(i => i.cat.id === cid && (!g || i.group === g)).forEach(it => add(it, (g ? 3 : 1.6) * w, `${w === 1 ? '風味' : '香り'}で「${catLabel(k)}」を選んだ`));
+  });
+  // 3. 酸の質
+  (r.terms?.acidity || []).forEach(t => (ACID_TERMS[t] || []).forEach(n => addName(n, 2.4, `酸の質が「${t.replace(/（.*）/, '')}」`)));
+  // 4. 精製・焙煎度・産地（よくある傾向。弱い手がかり）
+  Object.entries(PROCESS[info.process] || {}).forEach(([n, p]) => addName(n, p, `${info.process}によくある`));
+  Object.entries(ROAST[info.roast] || {}).forEach(([n, p]) => addName(n, p, `${info.roast}ローストによくある`));
+  const originText = [info.origin, info.menuName, info.bean, info.variety].filter(Boolean).join(' ');
+  ORIGINS.forEach(([re, map]) => { if (re.test(originText)) Object.entries(map).forEach(([n, p]) => p && addName(n, p, '産地・品種によくある')); });
+  // 5. 強さの記録
+  const s = r.scores || {};
+  if (s.bitterness >= 4) { addName('ダークチョコ', 1, '苦味が強い'); addName('カカオ', .8, '苦味が強い'); }
+  if (s.sweetness >= 4) { addName('キャラメル', .6, '甘さが強い'); addName('ハチミツ', .6, '甘さが強い'); }
+  if ((r.terms?.mouthfeel || []).includes('ティーライク')) addName('紅茶', 1, '口あたりがティーライク');
+
+  // 似た言葉は同じカテゴリから多く出すぎないように、上位から最大8つ
+  // 手がかりが少ないときは、弱い傾向も含めて最低3つは出す
+  const ranked = Object.entries(score).sort((a, b) => b[1] - a[1]);
+  let list = ranked.filter(([, v]) => v >= 2);
+  if (list.length < 3) list = ranked.filter(([, v]) => v >= 1.2).slice(0, Math.max(3, list.length));
+  const out = [], perCat = {};
+  for (const [id, v] of list) {
+    const c = ITEM_BY_ID[id].cat.id;
+    if ((perCat[c] = (perCat[c] || 0) + 1) > 3) continue;
+    out.push({ id, score: v, reasons: [...why[id]] });
+    if (out.length >= 8) break;
+  }
+  return out;
 }

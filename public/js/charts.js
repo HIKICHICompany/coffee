@@ -19,9 +19,10 @@ function radialText(text, r, deg, size, fill, weight = 400) {
 }
 
 // 風味の円。selected: Set<id>。photoUrl があれば中心に写真を入れる。
-export function wheelSVG(selected, { photoUrl = null, interactive = false } = {}) {
+export function wheelSVG(selected, { photoUrl = null, interactive = false, suggested = [] } = {}) {
   const sel = selected instanceof Set ? selected : new Set(selected || []);
-  const any = sel.size > 0;
+  const sug = new Set(suggested);
+  const any = sel.size > 0 || sug.size > 0;
   let out = `<svg class="wheel" viewBox="0 0 440 440" role="img" aria-label="風味の円">`;
   out += `<defs><clipPath id="holeClip"><circle cx="${C}" cy="${C}" r="${R.hole - 3}"/></clipPath></defs>`;
 
@@ -29,7 +30,7 @@ export function wheelSVG(selected, { photoUrl = null, interactive = false } = {}
   FLAVOR_TREE.forEach(cat => {
     const items = FLAVOR_ITEMS.filter(i => i.cat === cat);
     const a0 = items[0].a0, a1 = items[items.length - 1].a1;
-    const catOn = items.some(i => sel.has(i.id));
+    const catOn = items.some(i => sel.has(i.id) || sug.has(i.id));
     const op = !any || catOn ? 1 : 0.28;
     out += `<path d="${sector(R.hole, R.cat, a0, a1)}" fill="${cat.color}" opacity="${op}" stroke="#fff" stroke-width="1.5" data-cat="${cat.id}"/>`;
     out += radialText(cat.short, (R.hole + R.cat) / 2, (a0 + a1) / 2, cat.short.length > 3 ? 10 : 12, '#fff', 600);
@@ -37,16 +38,17 @@ export function wheelSVG(selected, { photoUrl = null, interactive = false } = {}
     cat.groups.forEach(g => {
       const gi = items.filter(i => i.group === g.name);
       const ga0 = gi[0].a0, ga1 = gi[gi.length - 1].a1;
-      const gOn = gi.some(i => sel.has(i.id));
+      const gOn = gi.some(i => sel.has(i.id) || sug.has(i.id));
       out += `<path d="${sector(R.cat, R.group, ga0, ga1)}" fill="${cat.color}" opacity="${!any || gOn ? 0.78 : 0.2}" stroke="#fff" stroke-width="1.2"/>`;
       out += radialText(g.name, (R.cat + R.group) / 2, (ga0 + ga1) / 2, g.name.length > 3 ? 8 : 9, '#fff', 500);
     });
 
     items.forEach(it => {
-      const on = sel.has(it.id);
-      out += `<g class="seg${on ? ' on' : ''}" data-id="${it.id}"${interactive ? ' tabindex="0" role="button" aria-pressed="' + on + '" aria-label="' + it.name + '"' : ''}>`;
-      out += `<path d="${sector(R.group, R.item, it.a0, it.a1)}" fill="${cat.color}" opacity="${on ? 1 : 0.16}" stroke="#fff" stroke-width="1"/>`;
-      out += radialText(it.name, (R.group + R.item) / 2, it.mid, it.name.length > 6 ? 7 : 8, on ? '#fff' : '#3a2f29', on ? 600 : 400);
+      const on = sel.has(it.id), maybe = !on && sug.has(it.id);
+      out += `<g class="seg${on ? ' on' : ''}${maybe ? ' maybe' : ''}" data-id="${it.id}"${interactive ? ' tabindex="0" role="button" aria-pressed="' + on + '" aria-label="' + it.name + (maybe ? '（提案）' : '') + '"' : ''}>`;
+      out += `<path d="${sector(R.group, R.item, it.a0, it.a1)}" fill="${cat.color}" opacity="${on ? 1 : maybe ? 0.42 : 0.16}" stroke="#fff" stroke-width="1"/>`;
+      if (maybe) out += `<path d="${sector(R.group + 2.5, R.item - 2.5, it.a0 + 0.6, it.a1 - 0.6)}" fill="none" stroke="#1F1A17" stroke-width="1.3" stroke-dasharray="3 2.5"/>`;
+      out += radialText(it.name, (R.group + R.item) / 2, it.mid, it.name.length > 6 ? 7 : 8, on ? '#fff' : '#3a2f29', on || maybe ? 600 : 400);
       out += `</g>`;
     });
   });
