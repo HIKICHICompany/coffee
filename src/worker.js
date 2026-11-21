@@ -140,10 +140,11 @@ async function readWithClaude(env, image, mediaType, prompt) {
   return { text: (out.content || []).filter(c => c.type === 'text').map(c => c.text).join('') };
 }
 
-const VISION_MODELS = ['@cf/google/gemma-4-26b-a4b-it', '@cf/meta/llama-4-scout-17b-16e-instruct'];
+// 本番で試した結果、日本語のメニューを安定して読めた Llama 4 Scout を先に使う
+const VISION_MODELS = ['@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/google/gemma-4-26b-a4b-it'];
 async function readWithWorkersAI(env, image, mediaType, prompt) {
   const models = env.VISION_MODEL ? [env.VISION_MODEL, ...VISION_MODELS] : VISION_MODELS;
-  const fails = [];
+  const fails = []; let last = null;
   for (const model of models) {
     try {
       const out = await env.AI.run(model, {
@@ -156,11 +157,13 @@ async function readWithWorkersAI(env, image, mediaType, prompt) {
       });
       const text = out?.choices?.[0]?.message?.content ?? out?.response ?? '';
       const t = typeof text === 'string' ? text : JSON.stringify(text);
-      if (t) return { text: t, model };
+      if (t && parseItems(t).length) return { text: t, model };
+      if (t) { fails.push(`${model}: 読み取れる形で返らなかった`); last = { text: t, model }; continue; }
       fails.push(`${model}: 空の応答`);
     } catch (e) {
       fails.push(`${model}: ${e.message}`);
     }
   }
+  if (last) return last;   // 形は崩れていても、返ってきたものは渡す（品名なしとして扱われる）
   throw new Error('読み取りに失敗しました。今日の無料枠を使い切った可能性があります（' + fails.join(' / ').slice(0, 200) + '）');
 }

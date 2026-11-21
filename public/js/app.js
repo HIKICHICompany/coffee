@@ -570,7 +570,7 @@ async function readPhoto(kind, file) {
 function pickOption(v, list) { if (!v) return ''; return list.find(o => v.includes(o) || o.includes(v)) || ''; }
 function applyMenu(m) {
   Object.assign(F.cafe, {
-    menuName: m.name || F.cafe.menuName, origin: m.origin || F.cafe.origin,
+    menuName: m.name || F.cafe.menuName, origin: m.origin || parseLocal(m.name || '').origin || F.cafe.origin,
     process: pickOption(m.process, PROCESSES) || F.cafe.process, roast: pickOption(m.roast, ROAST_LEVELS) || F.cafe.roast,
     method: pickOption(m.method, BREW_METHODS) || F.cafe.method, price: m.price ? String(m.price) : F.cafe.price,
     menuNotes: m.notes || F.cafe.menuNotes,
@@ -579,7 +579,7 @@ function applyMenu(m) {
 }
 function applyBag(b) {
   Object.assign(F.home, {
-    bean: b.name || F.home.bean, roaster: b.roaster || F.home.roaster, origin: b.origin || F.home.origin,
+    bean: b.name || F.home.bean, roaster: b.roaster || F.home.roaster, origin: b.origin || parseLocal(b.name || '').origin || F.home.origin,
     variety: b.variety || F.home.variety, process: pickOption(b.process, PROCESSES) || F.home.process,
     roast: pickOption(b.roast, ROAST_LEVELS) || F.home.roast, roastDate: b.roastDate || F.home.roastDate, bagNotes: b.notes || F.home.bagNotes,
   });
