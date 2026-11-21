@@ -1,5 +1,6 @@
 import { FLAVOR_TREE, FLAVOR_ITEMS, ITEM_BY_ID, TERM_GROUPS, TERM_BY_ID, ATTRS, FRAGRANCE, MAIN_TASTES, BREW_METHODS, ROAST_LEVELS, PROCESSES, GRINDS, DRINK_STYLES, flavorCentroid, centroidLabel, categoryMix, catOptions, catLabel, catColor, suggestFlavors } from './flavors.js';
 import { coverHTML, COVERS, coverStyle } from './covers.js';
+import { initBgm, syncButtons } from './bgm.js';
 import { wheelSVG, radarSVG, tasteMapSVG, escapeXml as esc } from './charts.js';
 import { db, uid, shrinkImage, blobToDataURL, dataURLToBlob } from './db.js';
 
@@ -107,7 +108,7 @@ async function renderList() {
   const counts = { all: all.length, cafe: all.filter(r => r.type === 'cafe').length, home: all.filter(r => r.type === 'home').length };
   view.innerHTML = `
     <header class="top">
-      <h1 class="brand"><a href="#/cover" aria-label="表紙を見る">珈琲テイスティングノート</a></h1>
+      <div class="brand-row"><h1 class="brand"><a href="#/cover" aria-label="表紙を見る">珈琲テイスティングノート</a></h1><button type="button" class="bgm-btn" data-bgm-toggle aria-pressed="true"><span class="bgm-ico" aria-hidden="true"></span></button></div>
       <div class="seg" role="tablist">
         ${[['all', 'すべて'], ['cafe', 'お店'], ['home', '家']].map(([k, l]) => `<button role="tab" aria-selected="${listFilter === k}" data-filter="${k}">${l}<span>${counts[k]}</span></button>`).join('')}
       </div>
@@ -329,6 +330,7 @@ async function renderForm(type, base, isEdit = false) {
       <section class="block">
         <h2>飲んだ一杯</h2>
         <label class="act"><input type="file" accept="image/*" id="menuShot" hidden><span class="ico cam"></span>メニューを撮って読み取る</label>
+        ${pasteBox('menu')}
         <div id="menuList"></div>
         ${input('cafe.menuName', 'メニュー名', { ph: '例：エチオピア イルガチェフェ' })}
         ${input('cafe.origin', '産地', { ph: '国・地域・農園' })}
@@ -343,6 +345,7 @@ async function renderForm(type, base, isEdit = false) {
       <section class="block">
         <h2>豆</h2>
         <label class="act"><input type="file" accept="image/*" id="bagShot" hidden><span class="ico cam"></span>豆の袋を撮って読み取る</label>
+        ${pasteBox('bag')}
         <div id="menuList"></div>
         ${input('home.bean', '豆の名前', { ph: '例：グアテマラ ウエウエテナンゴ' })}
         <div class="field"><span>焙煎</span>
@@ -386,6 +389,38 @@ async function renderForm(type, base, isEdit = false) {
   proposal = null;
   bindForm();
   renderFlavorChips(); renderProposal(); refreshTasting(); refreshPhotos(); refreshRatio(); watchWheelStep();
+}
+
+// ---- 予備：写真の文字を貼り付けて、端末の中だけで読み取る ----
+function pasteBox(kind) {
+  return `<details class="paste" id="pasteBox"><summary>写真の文字を貼り付けて読み取る</summary>
+    <p class="hint">iPhoneなら、写真の文字を長押しして「コピー」し、ここに貼り付けます。</p>
+    <textarea id="pasteText" rows="4" placeholder="${kind === 'menu' ? '例：エチオピア ゲデオ　ウォッシュト　浅煎り　ジャスミン、レモン　680円' : '例：グアテマラ ウエウエテナンゴ　ブルボン　中深煎り　焙煎日 2026.11.20'}"></textarea>
+    <button type="button" class="act" id="pasteRead" data-kind="${kind}">貼り付けた文から入れる</button>
+  </details>`;
+}
+const ORIGIN_WORDS = ['エチオピア', 'ケニア', 'タンザニア', 'ルワンダ', 'ブルンジ', 'ウガンダ', 'イエメン', 'ブラジル', 'コロンビア', 'グアテマラ', 'コスタリカ', 'パナマ', 'ホンジュラス', 'エルサルバドル', 'ニカラグア', 'メキシコ', 'ペルー', 'ボリビア', 'エクアドル', 'ジャマイカ', 'ハワイ', 'インドネシア', 'スマトラ', 'マンデリン', 'スラウェシ', 'トラジャ', 'パプアニューギニア', '東ティモール', 'ベトナム', 'タイ', 'ミャンマー', '中国', '雲南', 'インド'];
+const ROAST_WORDS = [[/極深煎り/, 'イタリアン'], [/中深煎り/, 'フルシティ'], [/深煎り/, 'フレンチ'], [/中浅煎り/, 'ミディアム'], [/浅煎り/, 'ライト'], [/中煎り/, 'ハイ']];
+const PROCESS_WORDS = [[/嫌気|アナエロ/, 'アナエロビック'], [/パルプド|ハニー/, 'ハニー'], [/非水洗|ナチュラル|天日/, 'ナチュラル'], [/水洗|ウォッシュ/, 'ウォッシュト'], [/スマトラ式/, 'スマトラ式']];
+export function parseLocal(text) {
+  const t = text.replace(/\r/g, '');
+  const lines = t.split(/\n+/).map(x => x.trim()).filter(Boolean);
+  const origin = ORIGIN_WORDS.filter(w => t.includes(w));
+  const roast = ROAST_LEVELS.find(r => t.includes(r + 'ロースト')) || ROAST_WORDS.find(([re]) => re.test(t))?.[1] || ROAST_LEVELS.find(r => t.includes(r)) || '';
+  const process = PROCESS_WORDS.find(([re]) => re.test(t))?.[1] || '';
+  const method = BREW_METHODS.find(m => t.includes(m)) || (/ドリップ/.test(t) ? 'ハンドドリップ' : '');
+  const price = (t.match(/(\d[\d,]{2,})\s*円/) || t.match(/[¥￥]\s*(\d[\d,]*)/) || [])[1]?.replace(/,/g, '') || '';
+  const date = (t.match(/(20\d\d)[./年-](\d{1,2})[./月-](\d{1,2})/) || []);
+  const hits0 = FLAVOR_ITEMS.map(i => i.name).filter(n => t.includes(n));
+  const flavorHits = hits0.filter(n => !hits0.some(o => o !== n && o.includes(n)));   // 「ミルクチョコ」の中の「ミルク」は数えない
+  const noteLine = lines.find(l => /フレーバー|テイスト|味わい|ノート|香り/.test(l));
+  const variety = ['ゲイシャ', 'ゲシャ', 'ブルボン', 'ティピカ', 'カトゥーラ', 'カトゥアイ', 'パカマラ', 'SL28', 'SL34', 'エアルーム', '在来種'].filter(v => t.includes(v)).join('・');
+  const name = (lines.find(l => origin.some(o => l.includes(o))) || lines[0] || '').replace(/[¥￥]?\s*\d[\d,]*\s*円?$/, '').slice(0, 40).trim();
+  return {
+    name, origin: origin.join(' '), roast, process, method, price, variety,
+    roastDate: date.length ? `${date[1]}-${String(date[2]).padStart(2, '0')}-${String(date[3]).padStart(2, '0')}` : '',
+    notes: noteLine ? noteLine.replace(/^.*?(フレーバー|テイスト|味わい|ノート|香り)[：:\s]*/, '') : flavorHits.join('、'),
+  };
 }
 
 function refreshRatio() {
@@ -480,6 +515,14 @@ function bindForm() {
   $('#findShop')?.addEventListener('click', findShops);
   $('#menuShot')?.addEventListener('change', e => e.target.files[0] && readPhoto('menu', e.target.files[0]));
   $('#bagShot')?.addEventListener('change', e => e.target.files[0] && readPhoto('bag', e.target.files[0]));
+  $('#pasteRead')?.addEventListener('click', e => {
+    const text = $('#pasteText').value.trim();
+    if (!text) { toast('先に文字を貼り付けてください'); return; }
+    const item = parseLocal(text);
+    if (e.target.dataset.kind === 'bag') applyBag(item); else applyMenu(item);
+    $('#pasteBox').open = false;
+    toast('貼り付けた文から入れました。違う所は直してください');
+  });
   $('#cancel').onclick = cancelForm;
   $('#save').onclick = saveForm;
 }
@@ -520,7 +563,7 @@ async function readPhoto(kind, file) {
     box.innerHTML = `<p class="hint">飲んだものをタップしてください。</p><ul class="picklist">${items.map((m, i) => `<li><button type="button" data-menu="${i}"><strong>${esc(m.name)}</strong><small>${esc([m.origin, m.process, m.roast, m.price ? m.price + '円' : ''].filter(Boolean).join('　'))}</small></button></li>`).join('')}</ul>`;
     $$('[data-menu]', box).forEach(b => b.onclick = () => { applyMenu(items[+b.dataset.menu]); box.innerHTML = ''; toast('メニューの内容を入れました'); });
   } catch (err) {
-    box.innerHTML = `<p class="busy err">${esc(err.message)}<br>写真は残したので、手で入力してください。</p>`;
+    box.innerHTML = `<p class="busy err">${esc(err.message)}<br>写真は残しました。上の「写真の文字を貼り付けて読み取る」か、手で入力してください。</p>`;
   }
 }
 
@@ -645,7 +688,7 @@ async function renderMap() {
   const shopTop = Object.entries(shops).sort((a, b) => b[1].n - a[1].n).slice(0, 5);
   const plotted = all.filter(r => r.scores?.acidity && r.scores?.bitterness && r.scores?.body).length;
   view.innerHTML = `
-    <header class="top"><h1 class="brand">味の地図</h1></header>
+    <header class="top"><div class="brand-row"><h1 class="brand">味の地図</h1><button type="button" class="bgm-btn" data-bgm-toggle aria-pressed="true"><span class="bgm-ico" aria-hidden="true"></span></button></div></header>
     <section class="block">
       <h2>一杯ずつの位置</h2>
       <p class="hint">「強さ」で酸味・苦味・コクを付けた一杯が並びます（${plotted}杯）。点をタップすると記録が開きます。</p>
@@ -672,13 +715,18 @@ async function renderSettings() {
   view.innerHTML = `
     <header class="top"><h1 class="brand">設定</h1></header>
     <section class="block">
+      <h2>BGM</h2>
+      <p class="hint">カフェ風のピアノ曲を流します。最初に画面に触れたときから鳴り始めます。</p>
+      <button type="button" class="act bgm-switch" data-bgm-toggle aria-pressed="true"><span class="bgm-ico" aria-hidden="true"></span><span class="bgm-label">BGM オン</span></button>
+    </section>
+    <section class="block">
       <h2>表紙</h2>
       <div class="cover-pick">${COVERS.map(c => `<button type="button" class="cover-opt" data-cover="${c.id}" aria-pressed="${coverStyle() === c.id}"><strong>${c.name}</strong><small>${c.desc}</small></button>`).join('')}</div>
       <a class="act" href="#/cover">表紙を見る</a>
     </section>
     <section class="block">
-      <h2>読み取りの合言葉</h2>
-      <p class="hint">メニューや豆の袋の読み取りに使います。Cloudflare に設定した合言葉（APP_TOKEN）と同じものを入れてください。</p>
+      <h2>読み取りの合言葉<small>使う場合だけ</small></h2>
+      <p class="hint">メニューや豆の袋の読み取りは、設定なしで使えます。Cloudflare に合言葉（APP_TOKEN）を登録した場合だけ、同じものを入れてください。</p>
       <label class="field"><span>合言葉</span><span class="in"><input type="password" id="tok" value="${esc(token())}" autocomplete="off"></span></label>
       <button type="button" class="act" id="saveTok">合言葉を保存する</button>
     </section>
@@ -690,7 +738,8 @@ async function renderSettings() {
     </section>
     <section class="block about">
       <h2>このアプリについて</h2>
-      <p class="hint">近くのお店は OpenStreetMap のデータで探します。お店が出ないときは店名を入力してください。風味の円は、このアプリ独自の分け方です。</p>
+      <p class="hint">近くのお店は OpenStreetMap のデータで探します。お店が出ないときは店名を入力してください。写真の読み取りは Cloudflare の AI を使います。風味の円は、このアプリ独自の分け方です。</p>
+      <p class="hint">BGM はこのアプリのためのオリジナル曲です。ピアノの音色：FluidR3 GM（Frank Wen、CC BY 3.0）。</p>
     </section>`;
   if (navigator.storage?.persist) navigator.storage.persist();
   $$('[data-cover]').forEach(b => b.onclick = () => {
@@ -757,6 +806,8 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
+new MutationObserver(() => syncButtons()).observe(view, { childList: true });
+initBgm();
 $('#newBtn').onclick = openNewSheet;
 route();
 

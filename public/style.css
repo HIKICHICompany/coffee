@@ -290,3 +290,18 @@ body[data-mode="cover"] .fab, body[data-mode="cover"] .tabbar { display: none; }
 .rings-art { width: min(86vw, 400px); height: auto; align-self: center; }
 .cover-rings .cover-sub { align-self: center; margin-bottom: 56px; }
 @media (prefers-reduced-motion: reduce) { .cup-ring path { stroke-dashoffset: 0; } }
+
+/* BGM */
+.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand a { text-decoration: none; }
+.bgm-btn { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.bgm-ico { width: 16px; height: 16px; display: inline-block; position: relative; }
+.bgm-ico::before { content: "♪"; position: absolute; inset: -4px 0 0; font-size: 17px; line-height: 1; text-align: center; color: var(--ink); }
+[data-bgm-toggle][aria-pressed="false"] .bgm-ico::before { color: #B5ADA4; }
+[data-bgm-toggle][aria-pressed="false"] .bgm-ico::after { content: ""; position: absolute; left: -2px; right: -2px; top: 7px; height: 1.6px; background: #B5ADA4; transform: rotate(-45deg); }
+.bgm-switch { justify-content: flex-start; padding-left: 16px; }
+.bgm-switch[aria-pressed="true"] { background: var(--bean); color: #fff; border-color: var(--bean); }
+.bgm-switch[aria-pressed="true"] .bgm-ico::before { color: #fff; }
+.paste { margin: -6px 0 14px; }
+.paste summary { cursor: pointer; font-size: 13.5px; color: var(--cherry); padding: 4px 0 8px; }
+.paste textarea { margin-bottom: 8px; }

@@ -7,10 +7,12 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
+  // Cloudflare の AI（写真の読み取り。キー不要、1日の無料枠あり）
+  "ai": { "binding": "AI" },
   "vars": {
-    // 読み取りに使うモデル（変えたいときだけ直す）
+    // Claude のキー（ANTHROPIC_API_KEY）を入れたときに使うモデル
     "MODEL": "claude-sonnet-5-5"
   }
-  // 秘密の値（ANTHROPIC_API_KEY, APP_TOKEN）はここに書かず、
-  // Cloudflare の画面の「設定 → 変数とシークレット」で登録する。
+  // 秘密の値（任意：ANTHROPIC_API_KEY で精度を上げる、APP_TOKEN で他人の利用を防ぐ）は
+  // ここに書かず、Cloudflare の画面の「設定 → 変数とシークレット」で登録する。
 }

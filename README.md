@@ -34,7 +34,8 @@ wrangler.jsonc     Cloudflare の設定
 ```
 
 - 近くの店：OpenStreetMap（Overpass API）。キー不要・無料。店が登録されていない場合は手入力
-- 写真の読み取り：Claude API（画像を読ませてJSONで返させる）
+- 写真の読み取り：Cloudflare の AI（Gemma 4。キー不要、1日の無料枠あり）。読めないときは、写真の文字を貼り付けて端末の中だけで読み取る予備あり。Claude のキーを登録すると Claude に切り替わる
+- BGM：オリジナルのカフェ風ピアノ曲（tools/compose_bgm.py で作曲・書き出し。ピアノ音色 FluidR3 GM, CC BY 3.0）。既定はオン、一覧・地図・設定で切り替え
 
 ## 公開の手順（GitHub → Cloudflare）
 
@@ -42,10 +43,10 @@ wrangler.jsonc     Cloudflare の設定
 2. Cloudflare の「Workers & Pages」→「作成」→「GitHub からインポート」でこのリポジトリを選ぶ
    - ルートディレクトリ：`/`（リポジトリ直下に置いた場合）
    - デプロイコマンド：`npx wrangler deploy`
-3. できた Worker の「設定 → 変数とシークレット」に2つ登録する（種類はシークレット）
-   - `ANTHROPIC_API_KEY`：Claude API のキー（console.anthropic.com で発行）
-   - `APP_TOKEN`：好きな合言葉。他人に読み取り機能を使われないための鍵
-4. 公開されたアドレスをスマホで開き、設定画面で同じ合言葉を入れる
+3. （任意）Worker の「設定 → 変数とシークレット」に登録すると機能が変わる
+   - `ANTHROPIC_API_KEY`：読み取りを Claude に切り替えて精度を上げる
+   - `APP_TOKEN`：好きな合言葉。他人に読み取り機能を使われないための鍵（登録したら設定画面にも同じものを入れる）
+4. 公開されたアドレスをスマホで開く
 5. 共有メニューから「ホーム画面に追加」
 
 読み取りのモデルは `wrangler.jsonc` の `MODEL` で変えられる（既定 `claude-sonnet-5-5`）。

@@ -95,11 +95,34 @@ async function readPhoto(request, env) {
   if (env.APP_TOKEN && request.headers.get('x-app-token') !== env.APP_TOKEN) {
     return json({ error: '合言葉が違います。設定画面で合言葉を入れてください' }, 401);
   }
-  if (!env.ANTHROPIC_API_KEY) return json({ error: '読み取りの準備ができていません（ANTHROPIC_API_KEY が未設定）' }, 500);
   const body = await request.json();
   const kind = body.kind === 'bag' ? 'bag' : 'menu';
   if (!body.image || body.image.length > 7_000_000) return json({ error: '写真が大きすぎるか、空です' }, 400);
+  const prompt = PROMPTS[kind] + (body.shop ? `\n（お店：${body.shop}）` : '');
+  const mediaType = body.mediaType || 'image/jpeg';
 
+  // Claude のキーがあれば Claude、なければ Cloudflare の AI（キー不要・1日の無料枠あり）
+  let text, engine;
+  if (env.ANTHROPIC_API_KEY) {
+    ({ text } = await readWithClaude(env, body.image, mediaType, prompt)); engine = 'claude';
+  } else if (env.AI) {
+    ({ text } = await readWithWorkersAI(env, body.image, mediaType, prompt)); engine = 'workers-ai';
+  } else {
+    return json({ error: '読み取りの準備ができていません（AI の設定がありません）' }, 500);
+  }
+  return json({ items: parseItems(text), engine });
+}
+
+function parseItems(text) {
+  const m = (text || '').replace(/```json|```/g, '').match(/\{[\s\S]*\}/);
+  if (!m) return [];
+  try {
+    const parsed = JSON.parse(m[0]);
+    return (parsed.items || []).filter(i => i && i.name).slice(0, 20);
+  } catch { return []; }
+}
+
+async function readWithClaude(env, image, mediaType, prompt) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
@@ -107,20 +130,37 @@ async function readPhoto(request, env) {
       model: env.MODEL || 'claude-sonnet-5-5',
       max_tokens: 2000,
       messages: [{ role: 'user', content: [
-        { type: 'image', source: { type: 'base64', media_type: body.mediaType || 'image/jpeg', data: body.image } },
-        { type: 'text', text: PROMPTS[kind] + (body.shop ? `\n（お店：${body.shop}）` : '') },
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: image } },
+        { type: 'text', text: prompt },
       ] }],
     }),
   });
-  if (!res.ok) {
-    const t = await res.text();
-    return json({ error: `読み取りに失敗しました（${res.status}）`, detail: t.slice(0, 300) }, 502);
-  }
+  if (!res.ok) throw new Error(`読み取りに失敗しました（${res.status}）`);
   const out = await res.json();
-  const text = (out.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-  const m = text.match(/\{[\s\S]*\}/);
-  if (!m) return json({ items: [] });
-  let parsed; try { parsed = JSON.parse(m[0]); } catch { return json({ items: [] }); }
-  const items = (parsed.items || []).filter(i => i && i.name).slice(0, 20);
-  return json({ items });
+  return { text: (out.content || []).filter(c => c.type === 'text').map(c => c.text).join('') };
+}
+
+const VISION_MODELS = ['@cf/google/gemma-4-26b-a4b-it', '@cf/meta/llama-4-scout-17b-16e-instruct'];
+async function readWithWorkersAI(env, image, mediaType, prompt) {
+  const models = env.VISION_MODEL ? [env.VISION_MODEL, ...VISION_MODELS] : VISION_MODELS;
+  const fails = [];
+  for (const model of models) {
+    try {
+      const out = await env.AI.run(model, {
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: prompt + '\n必ずJSONだけを返してください。' },
+          { type: 'image_url', image_url: { url: `data:${mediaType};base64,${image}` } },
+        ] }],
+        max_completion_tokens: 1500,
+        temperature: 0.1,
+      });
+      const text = out?.choices?.[0]?.message?.content ?? out?.response ?? '';
+      const t = typeof text === 'string' ? text : JSON.stringify(text);
+      if (t) return { text: t };
+      fails.push(`${model}: 空の応答`);
+    } catch (e) {
+      fails.push(`${model}: ${e.message}`);
+    }
+  }
+  throw new Error('読み取りに失敗しました。今日の無料枠を使い切った可能性があります（' + fails.join(' / ').slice(0, 200) + '）');
 }
