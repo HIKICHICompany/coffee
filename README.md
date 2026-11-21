@@ -33,7 +33,7 @@ wrangler.jsonc     Cloudflare の設定
 
 ## 公開の手順（GitHub → Cloudflare）
 
-1. GitHub に新しいリポジトリ（例：`ippai`）を作り、このフォルダの中身をそのまま上げる
+1. GitHub に新しいリポジトリ `coffee`を作り、このフォルダの中身をそのまま上げる
 2. Cloudflare の「Workers & Pages」→「作成」→「GitHub からインポート」でこのリポジトリを選ぶ
    - ルートディレクトリ：`/`（リポジトリ直下に置いた場合）
    - デプロイコマンド：`npx wrangler deploy`
