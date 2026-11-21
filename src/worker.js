@@ -106,11 +106,11 @@ async function readPhoto(request, env) {
   if (env.ANTHROPIC_API_KEY) {
     ({ text } = await readWithClaude(env, body.image, mediaType, prompt)); engine = 'claude';
   } else if (env.AI) {
-    ({ text } = await readWithWorkersAI(env, body.image, mediaType, prompt)); engine = 'workers-ai';
+    let model; ({ text, model } = await readWithWorkersAI(env, body.image, mediaType, prompt)); engine = model;
   } else {
     return json({ error: '読み取りの準備ができていません（AI の設定がありません）' }, 500);
   }
-  return json({ items: parseItems(text), engine });
+  return json({ items: parseItems(text), engine, ...(body.debug ? { raw: String(text).slice(0, 3000) } : {}) });
 }
 
 function parseItems(text) {
@@ -156,7 +156,7 @@ async function readWithWorkersAI(env, image, mediaType, prompt) {
       });
       const text = out?.choices?.[0]?.message?.content ?? out?.response ?? '';
       const t = typeof text === 'string' ? text : JSON.stringify(text);
-      if (t) return { text: t };
+      if (t) return { text: t, model };
       fails.push(`${model}: 空の応答`);
     } catch (e) {
       fails.push(`${model}: ${e.message}`);
