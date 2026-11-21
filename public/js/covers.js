@@ -2,11 +2,11 @@
 import { FLAVOR_TREE, categoryMix } from './flavors.js';
 
 export const COVERS = [
+  { id: 'cup', name: '一杯', desc: '茶色の布地に、真上から見たカップと風味の色の輪' },
   { id: 'techo', name: '手帳', desc: '布張りの手帳に、縦書きの題' },
-  { id: 'cup', name: '一杯', desc: '真上から見たカップと、風味の色の輪' },
   { id: 'rings', name: '年輪', desc: '記録が増えるほど育つ表紙' },
 ];
-export const coverStyle = () => { try { return localStorage.getItem('cover-style') || 'techo'; } catch { return 'techo'; } };
+export const coverStyle = () => { try { return localStorage.getItem('cover-style') || 'cup'; } catch { return 'cup'; } };
 
 const pt = (cx, cy, r, deg) => { const a = deg * Math.PI / 180; return [cx + r * Math.sin(a), cy - r * Math.cos(a)]; };
 function arc(cx, cy, r, a0, a1) {
@@ -24,7 +24,7 @@ export function coverHTML(style, records) {
   if (style === 'cup') {
     return `<div class="cover cover-cup">
       <svg class="cup-art" viewBox="0 0 400 400" aria-hidden="true">
-        <circle cx="200" cy="208" r="168" fill="#E9E6E0"/>
+        <circle cx="200" cy="206" r="168" fill="#1E1611" opacity=".55"/>
         <circle cx="200" cy="200" r="168" fill="#fff"/>
         <g class="cup-ring">${colorRing(200, 200, 150, 9, 2.2, 'pathLength="100"')}</g>
         <circle cx="200" cy="200" r="122" fill="#fff" stroke="#E2DED8"/>

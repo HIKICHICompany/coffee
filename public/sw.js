@@ -1,6 +1,6 @@
 // 電波がない場所でも開けるように、画面の部品を控えておく。
 // 中身を変えたら VERSION を上げる。
-const VERSION = 'coffee-note-v3';
+const VERSION = 'coffee-note-v4';
 const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/flavors.js', '/js/charts.js', '/js/db.js', '/js/covers.js', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png'];
 
 self.addEventListener('install', e => {

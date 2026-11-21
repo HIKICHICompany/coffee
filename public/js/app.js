@@ -743,6 +743,7 @@ async function route() {
   $$('.tabbar a').forEach(a => a.setAttribute('aria-current', h === a.getAttribute('href') ? 'page' : 'false'));
   let opened = true; try { opened = !!sessionStorage.getItem('opened'); } catch {}
   const showCover = h === '#/cover' || (!opened && h === '#/');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', showCover ? '#3B2A20' : '#F5F6F4');
   document.body.dataset.mode = showCover ? 'cover' : /^#\/(new|edit)/.test(h) ? 'form' : 'view';
   window.scrollTo(0, 0);
   if (showCover) return renderCover();
