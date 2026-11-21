@@ -33,17 +33,33 @@ async function nearby(url) {
       `nwr(around:${radius},${lat},${lon})[shop=coffee];` +
       `nwr(around:${radius},${lat},${lon})[cuisine~"coffee"];` +
       `);out center tags 60;`;
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'ippai-kirokucho/1.0' },
-      body: 'data=' + encodeURIComponent(q),
-    });
-    if (!res.ok) throw new Error('お店の検索先が混み合っています。少し待ってもう一度お試しください');
-    const j = await res.json();
+    const j = await overpass(q);
     shops = shape(j.elements || [], lat, lon);
     if (shops.length >= 3) break;
   }
   return json({ shops });
+}
+
+// 検索先が混んでいる・断られたときは、次の検索先を試す
+const OVERPASS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
+async function overpass(q) {
+  const fails = [];
+  for (const endpoint of OVERPASS) {
+    try {
+      const res = await fetch(endpoint + '?data=' + encodeURIComponent(q), {
+        headers: { 'user-agent': 'ippai-kirokucho/1.0 (https://coffee.hikichicompany.workers.dev)', accept: 'application/json' },
+      });
+      if (res.ok) return await res.json();
+      fails.push(`${new URL(endpoint).host}:${res.status}`);
+    } catch (e) {
+      fails.push(`${new URL(endpoint).host}:${e.message}`);
+    }
+  }
+  throw new Error('お店の検索先につながりませんでした。少し待ってもう一度お試しください（' + fails.join(', ') + '）');
 }
 
 function shape(elements, lat, lon) {
