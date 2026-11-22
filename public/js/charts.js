@@ -120,7 +120,7 @@ export function tasteMapSVG(records, { highlight = null } = {}) {
     const x = X(s.acidity - s.bitterness), y = Y(s.body);
     const jitter = (parseInt(r.id.slice(-3), 36) % 9 - 4) * 1.2;
     const hl = highlight && r.id === highlight;
-    const col = r.type === 'cafe' ? '#9E2A3A' : '#5F7A3A';
+    const col = '#3B2A20';
     out += `<a href="#/r/${r.id}"><circle cx="${f(x + jitter)}" cy="${f(y - jitter)}" r="${hl ? 9 : 6.5}" fill="${col}" fill-opacity="${hl ? 1 : .75}" stroke="#fff" stroke-width="2"><title>${escapeXml(r.title || '')}</title></circle></a>`;
   });
   out += `</svg>`;
