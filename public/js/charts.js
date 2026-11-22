@@ -105,12 +105,12 @@ export function radarSVG(scores, { size = 300, compare = null } = {}) {
 export const RATE_COLORS = ['#FFFFFF', '#DCC9AE', '#C8A77C', '#A9814F', '#7A5535', '#3B2A20'];
 export const rateColor = n => RATE_COLORS[Math.max(0, Math.min(5, n || 0))];
 
-// 珈琲テイスティングマップ：横 = 明るい（酸）↔ 深い（苦）、縦 = 軽い ↔ 重い（コク）
+// テイスティングマップ：横 = 明るい（酸）↔ 深い（苦）、縦 = 軽い ↔ 重い（コク）
 export function tasteMapSVG(records, { highlight = null } = {}) {
   const W = 340, H = 340, pad = 34;
   const X = v => pad + ((v + 4.6) / 9.2) * (W - pad * 2);  // 酸味−苦味：-4〜4（端に余白）
   const Y = v => H - pad - ((v - 0.6) / 4.8) * (H - pad * 2);  // コク：1〜5（端に余白）
-  let out = `<svg class="tastemap" viewBox="0 0 ${W} ${H}" role="img" aria-label="珈琲テイスティングマップ">`;
+  let out = `<svg class="tastemap" viewBox="0 0 ${W} ${H}" role="img" aria-label="テイスティングマップ">`;
   out += `<rect x="${pad}" y="${pad}" width="${W - pad * 2}" height="${H - pad * 2}" fill="#fff" stroke="#D9D4CC"/>`;
   out += `<line x1="${W / 2}" y1="${pad}" x2="${W / 2}" y2="${H - pad}" stroke="#D9D4CC"/><line x1="${pad}" y1="${H / 2}" x2="${W - pad}" y2="${H / 2}" stroke="#D9D4CC"/>`;
   const q = (x, y, t, a) => `<text x="${x}" y="${y}" font-size="11" fill="#9b928a" text-anchor="${a}">${t}</text>`;

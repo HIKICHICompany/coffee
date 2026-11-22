@@ -70,7 +70,7 @@ export async function makeCard({ r, title, sub, photoUrl, all, url }) {
   const me = pos(r);
   if (me) { c.fillStyle = rateColor(r.rating); c.strokeStyle = '#fff'; c.lineWidth = 5; c.beginPath(); c.arc(me[0], me[1], 17, 0, Math.PI * 2); c.fill(); c.stroke(); c.strokeStyle = INK; c.lineWidth = 2.5; c.beginPath(); c.arc(me[0], me[1], 23, 0, Math.PI * 2); c.stroke(); }
   c.textAlign = 'left'; c.fillStyle = SUB; c.font = `400 20px ${SANS}`;
-  c.fillText(`珈琲テイスティングマップ（${(all || []).filter(pos).length}杯）　色＝★の数`, mx + 4, my - 14);
+  c.fillText(`テイスティングマップ（${(all || []).filter(pos).length}杯）　色＝★の数`, mx + 4, my - 14);
   c.fillText('風味の円', 70, 520);
 
   // 下の帯
