@@ -11,7 +11,7 @@ function el() {
     audio = new Audio('/audio/cafe.m4a');
     audio.loop = true;
     audio.preload = 'auto';
-    audio.volume = 0.32;
+    audio.volume = 0.3;
   }
   return audio;
 }
@@ -32,7 +32,7 @@ export function bgmPlay() {
   const a = el();
   if (!a.paused) return;
   a.volume = 0;
-  a.play().then(() => { started = true; fadeTo(0.32, 2500); }).catch(() => {});
+  a.play().then(() => { started = true; fadeTo(0.3, 2500); }).catch(() => {});
 }
 export function bgmPause() { if (audio && !audio.paused) fadeTo(0, 400); }
 

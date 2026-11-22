@@ -506,7 +506,7 @@ async function renderSettings() {
       <details><summary>そのほか</summary>
         <label class="field"><span>読み取りの合言葉（Cloudflare に登録した場合だけ）</span><span class="in"><input type="password" id="tok" value="${esc(token())}" autocomplete="off"></span></label>
         <button type="button" class="act" id="saveTok">合言葉を保存する</button>
-        <p class="hint">記録はこの端末の中にあります。機種変更に備えて、ときどき控えを書き出してください。近くのお店は OpenStreetMap、写真の読み取りは Cloudflare の AI を使います。BGM はオリジナル曲です（ピアノの音色：FluidR3 GM、Frank Wen、CC BY 3.0）。</p>
+        <p class="hint">記録はこの端末の中にあります。機種変更に備えて、ときどき控えを書き出してください。近くのお店は OpenStreetMap、写真の読み取りは Cloudflare の AI を使います。BGM「冬日咖啡馆」は Suno で作った曲です。</p>
       </details>
     </div>`;
   if (navigator.storage?.persist) navigator.storage.persist();

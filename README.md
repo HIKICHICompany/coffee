@@ -32,7 +32,7 @@ wrangler.jsonc     Cloudflare の設定
 
 - 近くの店：OpenStreetMap（Overpass API）。キー不要・無料。店が登録されていない場合は手入力
 - 写真の読み取り：Cloudflare の AI（Gemma 4。キー不要、1日の無料枠あり）。読めないときは、写真の文字を貼り付けて端末の中だけで読み取る予備あり。Claude のキーを登録すると Claude に切り替わる
-- BGM：間の多い静かなピアノ（tools/ambient.py で作曲・書き出し。打楽器なし・旋律なし・弱い音。ピアノ音色 FluidR3 GM, CC BY 3.0）。既定はオン、ノート・地図・設定で切り替え
+- BGM：「冬日咖啡馆」（Suno で作成した曲を、切れ目なく繰り返す形に加工）。既定はオン、ノート・地図・設定で切り替え
 
 ## 公開の手順（GitHub → Cloudflare）
 
