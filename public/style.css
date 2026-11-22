@@ -409,3 +409,12 @@ body[data-mode="form"] { padding-bottom: calc(110px + var(--safe-b)); }
 .cover-title small { font-family: var(--sans); font-weight: 500; font-size: 13px; letter-spacing: .42em; margin: 14px -.42em 0 0; opacity: .85; }
 .bgm-label::before { content: "オフ"; }
 [data-bgm-toggle][aria-pressed="true"] .bgm-label::before { content: "オン"; }
+
+/* 見直し：点は最初から見せる／下のボタンが内容に重ならない／確認の窓 */
+.knob.unset { opacity: .4; }
+.knob { left: 50%; top: 50%; }
+body[data-mode="form"] { padding-bottom: calc(150px + var(--safe-b)); }
+.savebar { background: linear-gradient(rgba(251,250,248,0), var(--paper) 22px); padding-top: 26px; }
+.sheet.ask { z-index: 60; }
+.sheet.ask .sheet-title { font-family: var(--sans); font-size: 15.5px; margin-bottom: 8px; }
+.sheet.ask .act { margin: 0; }

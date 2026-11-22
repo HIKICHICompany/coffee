@@ -27,6 +27,14 @@ function toast(msg, ms = 2400) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, ms);
 }
+function ask(msg, okLabel) {
+  return new Promise(res => {
+    const o = document.createElement('div'); o.className = 'sheet ask';
+    o.innerHTML = `<div class="sheet-body" role="alertdialog" aria-label="確認"><p class="sheet-title">${msg}</p><button type="button" class="act primary" data-ok>${okLabel}</button><button type="button" class="act" data-no>やめる</button></div>`;
+    o.onclick = e => { const ok = !!e.target.closest('[data-ok]'); if (ok || e.target === o || e.target.closest('[data-no]')) { o.remove(); res(ok); } };
+    document.body.appendChild(o);
+  });
+}
 const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const fmtDate = s => { if (!s) return ''; const [, m, d] = s.split('-'); return `${+m}月${+d}日`; };
 const get = (o, path) => path.split('.').reduce((a, k) => a?.[k], o);
@@ -166,15 +174,15 @@ function stepWhich() {
 
 function slider(id, label, words) {
   const v = F.scores[id];
-  return `<div class="sl${v ? '' : ' unset'}"><label><span>${label}</span><em data-word="${id}">${v ? words[v] : ''}</em></label>
+  return `<div class="sl${v ? '' : ' unset'}"><label><span>${label}</span><em data-word="${id}">${v ? `${words[v]}　${v}/5` : ''}</em></label>
     <input type="range" min="1" max="5" step="1" value="${v || 3}" data-range="${id}" aria-label="${label}"></div>`;
 }
 function stepTaste() {
   return `
-    <p class="hint">点を動かすと、酸味・苦味・コクが記録されます。</p>
+    <p class="hint">真ん中の点を、感じた味の方へ動かしてください。</p>
     <div class="pad" id="pad" role="application" aria-label="味の位置">
       <span class="t">重い</span><span class="b">軽い</span><span class="l">苦味</span><span class="r">酸味</span>
-      <div class="knob" id="knob" hidden></div>
+      <div class="knob unset" id="knob"></div>
     </div>
     ${slider('sweetness', '甘さ', SWEET_WORDS)}
     ${slider('aftertaste', '余韻', AFTER_WORDS)}
@@ -184,7 +192,7 @@ function stepTaste() {
 }
 function stepFlavor() {
   return `
-    <p class="hint">合うものに触れてください。円からも選べます。</p>
+    <p class="hint">感じた風味に触れてください。</p>
     <div id="proposal" class="sugg"></div>
     <div class="wheel-wrap" id="wheelBox"></div>
     <details class="more" id="moreWords"><summary>言葉の一覧から選ぶ</summary>
@@ -224,8 +232,9 @@ function showStep(n) {
 
 // 味の点：横＝酸味↔苦味、縦＝コク
 function placeKnob() {
-  const k = $('#knob'); if (!k || !F.taste) return;
-  k.hidden = false; k.style.left = (F.taste.x + 1) / 2 * 100 + '%'; k.style.top = (1 - F.taste.y) / 2 * 100 + '%';
+  const k = $('#knob'); if (!k) return;
+  if (!F.taste) { k.style.left = '50%'; k.style.top = '50%'; return; }
+  k.classList.remove('unset'); k.style.left = (F.taste.x + 1) / 2 * 100 + '%'; k.style.top = (1 - F.taste.y) / 2 * 100 + '%';
 }
 function padMove(e) {
   const r = $('#pad').getBoundingClientRect(), c = v => Math.max(-1, Math.min(1, v));
@@ -245,7 +254,7 @@ function refreshFlavor() {
   const ids = [...new Set([...(proposal || []).map(p => p.id), ...F.flavors])];
   $('#proposal').innerHTML = ids.length
     ? ids.map(id => { const it = ITEM_BY_ID[id]; return it ? `<button type="button" class="sg" aria-pressed="${F.flavors.includes(id)}" data-flavor="${id}" style="--c:${it.cat.color}">${it.name}</button>` : ''; }).join('')
-    : '<p class="hint">円に触れて選んでください。</p>';
+    : '';
   $('#wheelBox').innerHTML = wheelSVG(new Set(F.flavors), { interactive: true, suggested: (proposal || []).map(p => p.id) });
   $$('#flavorChips [data-flavor]').forEach(b => b.setAttribute('aria-pressed', F.flavors.includes(b.dataset.flavor)));
 }
@@ -277,7 +286,7 @@ function bindForm() {
   const form = $('#form');
   form.addEventListener('input', e => {
     const rg = e.target.dataset.range;
-    if (rg) { const v = +e.target.value; F.scores[rg] = v; e.target.closest('.sl').classList.remove('unset'); $(`[data-word="${rg}"]`).textContent = (rg === 'sweetness' ? SWEET_WORDS : AFTER_WORDS)[v]; return; }
+    if (rg) { const v = +e.target.value; F.scores[rg] = v; e.target.closest('.sl').classList.remove('unset'); $(`[data-word="${rg}"]`).textContent = `${(rg === 'sweetness' ? SWEET_WORDS : AFTER_WORDS)[v]}　${v}/5`; return; }
     const f = e.target.dataset.field; if (!f) return;
     set(F, f, e.target.value);
     if (f === 'home.dose' || f === 'home.water') refreshRatio();
@@ -298,10 +307,11 @@ function bindForm() {
     if (st) { const n = +st.dataset.star; F.rating = F.rating === n ? n - 1 : n; $$('#stars button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.star <= F.rating)); return; }
     const ph = e.target.closest('.ph');
     if (ph) {
-      const id = ph.dataset.ph; if (!confirm('この写真を外しますか？')) return;
+      const id = ph.dataset.ph;
+      return ask('この写真を外しますか', '外す').then(ok => { if (!ok) return;
       PHOTO_KEYS.forEach(k => { if (F.photos[k]) F.photos[k] = F.photos[k].filter(x => x !== id); });
       if (newPhotos.includes(id)) { newPhotos = newPhotos.filter(x => x !== id); db.deletePhoto(id); } else removedPhotos.push(id);
-      return refreshPhotos();
+      refreshPhotos(); });
     }
     if (e.target.closest('#findShop')) return findShops();
     if (e.target.closest('#pasteRead')) {
@@ -407,6 +417,9 @@ async function cancelForm() {
   history.length > 1 ? history.back() : (location.hash = '#/');
 }
 async function saveForm() {
+  const c = F.type === 'cafe' ? F.cafe : F.home;
+  const empty = !(c.menuName || c.shop || c.bean) && !F.taste && !F.flavors.length && !F.rating && !F.memo && !allPhotos(F).length;
+  if (empty) { toast('まだ何も書かれていません。名前か味をひとつ入れてください', 3200); return showStep(0); }
   F.title = titleOf(F); F.updatedAt = new Date().toISOString();
   await db.putRecord(F);
   for (const id of removedPhotos) await db.deletePhoto(id);
@@ -455,7 +468,7 @@ async function renderDetail(id) {
     </article>`;
   $$('.gph').forEach(async el => { const u = await photoURL(el.dataset.full); if (u) el.style.backgroundImage = `url(${u})`; el.onclick = () => { const o = $('#full'); o.innerHTML = `<img src="${u}" alt="">`; o.hidden = false; o.onclick = () => { o.hidden = true; o.innerHTML = ''; }; }; });
   $('#del').onclick = async () => {
-    if (!confirm('この記録と写真を消します。元に戻せません。消しますか？')) return;
+    if (!await ask('この記録を消しますか。元には戻せません。', '消す')) return;
     for (const pid of allPhotos(r)) await db.deletePhoto(pid);
     await db.deleteRecord(r.id); toast('消しました'); location.hash = '#/';
   };
