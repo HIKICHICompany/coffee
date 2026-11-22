@@ -43,22 +43,32 @@ export async function makeCard({ r, title, sub, photoUrl, all, url }) {
   const tl = wrap(c, title, S - tx - 60, 2);
   let y = tl.length === 1 ? 170 : 140;
   tl.forEach(l => { c.fillText(l, tx, y); y += 68; });
-  c.font = `400 28px ${SANS}`; c.fillStyle = SUB; c.fillText(sub, tx, y - 14);
+  c.font = `400 28px ${SANS}`; c.fillStyle = SUB; c.fillText(wrap(c, sub, S - tx - 60, 1)[0] || '', tx, y - 14);
   if (r.rating) { c.font = `400 34px ${SANS}`; c.fillStyle = BEAN; c.fillText('★'.repeat(r.rating) + '☆'.repeat(5 - r.rating), tx, y + 36); }
 
-  // 短評
-  const sent = summarySentence(r);
-  c.fillStyle = INK; c.font = `500 38px ${MIN}`;
-  let sy = 400;
-  sent.forEach(s => wrap(c, s, S - 140, 2).forEach(l => { c.fillText(l, 70, sy); sy += 58; }));
-  if (!sent.length && r.memo) wrap(c, r.memo, S - 140, 2).forEach(l => { c.fillText(l, 70, sy); sy += 58; });
+  // 短評：まず1文1行に収まる大きさを探し、収まらなければ折り返す
+  let sent = summarySentence(r);
+  if (!sent.length && r.memo) sent = [r.memo];
+  let fs = 38;
+  c.font = `500 ${fs}px ${MIN}`;
+  while (fs > 28 && sent.some(t => c.measureText(t).width > S - 140)) { fs -= 2; c.font = `500 ${fs}px ${MIN}`; }
+  const lh = Math.round(fs * 1.5);
+  const lines = sent.flatMap(t => wrap(c, t, S - 140, 2)).slice(0, 4);
+  c.fillStyle = INK; c.textAlign = 'left';
+  let sy = 390;
+  lines.forEach(l => { c.fillText(l, 70, sy); sy += lh; });
 
-  // 風味の円
+  // 下の段：短評の終わりから下の帯までに、円とマップを収める
+  const top = Math.max(sy + 6, 500), bottom = S - 86;
+  const wsz = Math.min(500, bottom - (top + 30));
+  const msz = Math.min(400, wsz - 30);
+  c.fillStyle = SUB; c.font = `400 20px ${SANS}`;
+  c.fillText('風味の円', 70, top);
   const svg = wheelSVG(new Set(r.flavors || [])).replace('<svg class="wheel"', `<svg xmlns="http://www.w3.org/2000/svg" width="880" height="880" font-family='${SANS.replace(/"/g, '')}'`);
-  try { const wim = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)); c.drawImage(wim, 40, 520, 500, 500); } catch {}
+  try { const wim = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)); c.drawImage(wim, 40, top + 14, wsz, wsz); } catch {}
 
   // マップ（色は星の数。この一杯は大きく、輪で囲む）
-  const mx = 610, my = 560, ms = 400;
+  const ms = msz, mx = S - 70 - ms, my = top + 14 + (wsz - ms) / 2 + 10;
   c.fillStyle = '#fff'; c.strokeStyle = LINE; c.lineWidth = 2;
   c.beginPath(); c.roundRect(mx, my, ms, ms, 24); c.fill(); c.stroke();
   c.beginPath(); c.moveTo(mx + ms / 2, my + 30); c.lineTo(mx + ms / 2, my + ms - 30); c.moveTo(mx + 30, my + ms / 2); c.lineTo(mx + ms - 30, my + ms / 2); c.stroke();
@@ -71,7 +81,6 @@ export async function makeCard({ r, title, sub, photoUrl, all, url }) {
   if (me) { c.fillStyle = rateColor(r.rating); c.strokeStyle = '#fff'; c.lineWidth = 5; c.beginPath(); c.arc(me[0], me[1], 17, 0, Math.PI * 2); c.fill(); c.stroke(); c.strokeStyle = INK; c.lineWidth = 2.5; c.beginPath(); c.arc(me[0], me[1], 23, 0, Math.PI * 2); c.stroke(); }
   c.textAlign = 'left'; c.fillStyle = SUB; c.font = `400 20px ${SANS}`;
   c.fillText(`テイスティングマップ（${(all || []).filter(pos).length}杯）　色＝★の数`, mx + 4, my - 14);
-  c.fillText('風味の円', 70, 520);
 
   // 下の帯
   c.fillStyle = BEAN; c.font = `700 26px ${MIN}`; c.textAlign = 'left'; c.fillText('珈琲テイスティングノート', 70, S - 30);
