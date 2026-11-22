@@ -3,6 +3,7 @@ import { wheelSVG, radarSVG, tasteMapSVG, escapeXml as esc } from './charts.js';
 import { db, uid, shrinkImage, blobToDataURL, dataURLToBlob } from './db.js';
 import { coverHTML } from './covers.js';
 import { initBgm, syncButtons } from './bgm.js';
+import { makeCard, shareText } from './share.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -462,11 +463,13 @@ async function renderDetail(id) {
         ${hasScores || fine.length ? `<details><summary>くわしい記録</summary>${hasScores ? `<div class="radar-box">${radarSVG(r.scores)}</div>` : ''}${fine.length ? dl(fine) : ''}</details>` : ''}
       </div>
       <div class="detail-actions">
+        <button type="button" class="act primary" id="share">シェアする</button>
         <button type="button" class="act" id="again">${r.type === 'home' ? '同じ豆でもう一杯' : 'このお店でもう一杯'}</button>
         <button type="button" class="danger" id="del">この記録を消す</button>
       </div>
     </article>`;
   $$('.gph').forEach(async el => { const u = await photoURL(el.dataset.full); if (u) el.style.backgroundImage = `url(${u})`; el.onclick = () => { const o = $('#full'); o.innerHTML = `<img src="${u}" alt="">`; o.hidden = false; o.onclick = () => { o.hidden = true; o.innerHTML = ''; }; }; });
+  $('#share').onclick = () => openShare(r, cupUrl);
   $('#del').onclick = async () => {
     if (!await ask('この記録を消しますか。元には戻せません。', '消す')) return;
     for (const pid of allPhotos(r)) await db.deletePhoto(pid);
@@ -477,6 +480,35 @@ async function renderDetail(id) {
     if (r.type === 'home') n.home = { ...r.home }; else n.cafe = { shop: r.cafe.shop, address: r.cafe.address, lat: r.cafe.lat, lon: r.cafe.lon };
     pendingDraft = n; location.hash = `#/new/${r.type}`;
   };
+}
+
+// ---------- シェア ----------
+async function openShare(r, cupUrl) {
+  const url = location.origin + '/', title = titleOf(r);
+  const text = shareText(r, title, url);
+  const o = document.createElement('div'); o.className = 'sheet share';
+  o.innerHTML = `<div class="sheet-body" role="dialog" aria-label="シェア"><div class="share-img" id="shareImg"><p class="busy">画像を作っています…</p></div>
+    <textarea id="shareText" rows="5">${esc(text)}</textarea>
+    <button type="button" class="act primary" id="doShare" disabled>シェアする</button>
+    <div class="share-row"><button type="button" class="act" id="saveImg" disabled>画像を保存</button><button type="button" class="act" id="copyText">文をコピー</button></div>
+    <button type="button" class="act ghost" data-close>とじる</button></div>`;
+  o.onclick = e => { if (e.target === o || e.target.closest('[data-close]')) o.remove(); };
+  document.body.appendChild(o);
+  const blob = await makeCard({ r, title, sub: subOf(r), photoUrl: cupUrl, all: await db.allRecords(), url });
+  if (!blob || !o.isConnected) return;
+  const file = new File([blob], `珈琲ノート_${r.date}.png`, { type: 'image/png' });
+  const imgUrl = URL.createObjectURL(blob);
+  $('#shareImg', o).innerHTML = `<img src="${imgUrl}" alt="シェア用の画像">`;
+  const canFiles = !!navigator.canShare?.({ files: [file] });
+  const go = $('#doShare', o), save = $('#saveImg', o);
+  go.disabled = save.disabled = false;
+  if (!navigator.share) { go.hidden = true; }
+  go.onclick = async () => {
+    const t = $('#shareText', o).value;
+    try { await navigator.share(canFiles ? { files: [file], text: t } : { text: t, url }); } catch (e) { if (e.name !== 'AbortError') toast('この端末ではシェアを開けませんでした。画像を保存して投稿してください', 3600); }
+  };
+  save.onclick = () => { const a = document.createElement('a'); a.href = imgUrl; a.download = file.name; a.click(); toast('画像を保存しました'); };
+  $('#copyText', o).onclick = async () => { const t = $('#shareText', o); try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand('copy'); } toast('文をコピーしました'); };
 }
 
 // ---------- 味の地図 ----------

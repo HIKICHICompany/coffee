@@ -1,7 +1,7 @@
 // 電波がない場所でも開けるように、画面の部品を控えておく。
 // 中身を変えたら VERSION を上げる。
-const VERSION = 'coffee-note-v10';
-const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/flavors.js', '/js/charts.js', '/js/db.js', '/js/covers.js', '/js/bgm.js', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png'];
+const VERSION = 'coffee-note-v11';
+const SHELL = ['/', '/index.html', '/style.css', '/js/app.js', '/js/flavors.js', '/js/charts.js', '/js/db.js', '/js/covers.js', '/js/bgm.js', '/js/share.js', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
