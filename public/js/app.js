@@ -1,5 +1,5 @@
 import { FLAVOR_TREE, FLAVOR_ITEMS, ITEM_BY_ID, TERM_GROUPS, TERM_BY_ID, ATTRS, BREW_METHODS, ROAST_LEVELS, PROCESSES, GRINDS, DRINK_STYLES, flavorCentroid, centroidLabel, categoryMix, catLabel, catColor, suggestFlavors, summarySentence } from './flavors.js';
-import { wheelSVG, radarSVG, tasteMapSVG, escapeXml as esc } from './charts.js';
+import { wheelSVG, radarSVG, tasteMapSVG, RATE_COLORS, escapeXml as esc } from './charts.js';
 import { db, uid, shrinkImage, blobToDataURL, dataURLToBlob } from './db.js';
 import { coverHTML } from './covers.js';
 import { initBgm, syncButtons } from './bgm.js';
@@ -511,7 +511,7 @@ async function openShare(r, cupUrl) {
   $('#copyText', o).onclick = async () => { const t = $('#shareText', o); try { await navigator.clipboard.writeText(t.value); } catch { t.select(); document.execCommand('copy'); } toast('文をコピーしました'); };
 }
 
-// ---------- 味の地図 ----------
+// ---------- 珈琲テイスティングマップ ----------
 async function renderMap() {
   const all = await db.allRecords();
   const freq = {}; all.forEach(r => (r.flavors || []).forEach(id => { if (ITEM_BY_ID[id]) freq[id] = (freq[id] || 0) + 1; }));
@@ -519,8 +519,9 @@ async function renderMap() {
   const liked = all.filter(r => (r.rating || 0) >= 4).flatMap(r => r.flavors || []);
   view.innerHTML = `
     <header class="nav"><span></span>${BGM_BTN}</header>
-    <h1 class="big">味の地図</h1>
+    <h1 class="big long">珈琲テイスティングマップ</h1>
     <div class="map-box">${tasteMapSVG(all)}</div>
+    <p class="rate-legend" aria-label="点の色は星の数">${[1, 2, 3, 4, 5].map(n => `<span><i style="background:${RATE_COLORS[n]}"></i>★${n}</span>`).join('')}<span><i class="none"></i>星なし</span></p>
     ${liked.length ? `<h2 class="sec">好きな一杯は、このあたり</h2><div class="wheel-wrap">${wheelSVG(new Set(liked))}</div><p class="centroid">${centroidLabel(flavorCentroid(liked))}</p>` : '<p class="hint center">★4以上の一杯が増えると、好みの傾向がここに出ます。</p>'}
     ${top.length ? `<h2 class="sec">よく感じる風味</h2><ul class="bars">${top.map(([id, n]) => { const it = ITEM_BY_ID[id]; return `<li><span>${it.name}</span><span class="bar"><span style="width:${n / max * 100}%;background:${it.cat.color}"></span></span><em>${n}</em></li>`; }).join('')}</ul>` : ''}`;
 }

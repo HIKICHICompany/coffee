@@ -1,6 +1,6 @@
 // シェア用の正方形レポート（1080×1080）を作る
 import { ITEM_BY_ID, summarySentence } from './flavors.js';
-import { wheelSVG } from './charts.js';
+import { wheelSVG, rateColor } from './charts.js';
 
 const S = 1080, INK = '#1D1A17', SUB = '#8A847C', BEAN = '#3B2A20', LINE = '#E4E0DA', PAPER = '#FBFAF8';
 const MIN = '"Zen Old Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif';
@@ -57,7 +57,7 @@ export async function makeCard({ r, title, sub, photoUrl, all, url }) {
   const svg = wheelSVG(new Set(r.flavors || [])).replace('<svg class="wheel"', `<svg xmlns="http://www.w3.org/2000/svg" width="880" height="880" font-family='${SANS.replace(/"/g, '')}'`);
   try { const wim = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)); c.drawImage(wim, 40, 520, 500, 500); } catch {}
 
-  // 味の地図（この一杯を濃く、ほかを薄く）
+  // マップ（色は星の数。この一杯は大きく、輪で囲む）
   const mx = 610, my = 560, ms = 400;
   c.fillStyle = '#fff'; c.strokeStyle = LINE; c.lineWidth = 2;
   c.beginPath(); c.roundRect(mx, my, ms, ms, 24); c.fill(); c.stroke();
@@ -66,11 +66,11 @@ export async function makeCard({ r, title, sub, photoUrl, all, url }) {
   c.fillText('重い', mx + ms / 2, my + 26); c.fillText('軽い', mx + ms / 2, my + ms - 10);
   c.textAlign = 'left'; c.fillText('苦味', mx + 12, my + ms / 2 - 10); c.textAlign = 'right'; c.fillText('酸味', mx + ms - 12, my + ms / 2 - 10);
   const pos = q => { const s = q.scores || {}; if (!s.acidity || !s.bitterness || !s.body) return null; const t = q.taste || { x: (s.acidity - s.bitterness) / 4, y: (s.body - 3) / 2 }; return [mx + 40 + (t.x + 1) / 2 * (ms - 80), my + 40 + (1 - t.y) / 2 * (ms - 80)]; };
-  (all || []).forEach(q => { if (q.id === r.id) return; const p = pos(q); if (!p) return; c.fillStyle = 'rgba(59,42,32,.22)'; c.beginPath(); c.arc(p[0], p[1], 9, 0, Math.PI * 2); c.fill(); });
+  (all || []).forEach(q => { if (q.id === r.id) return; const p = pos(q); if (!p) return; c.fillStyle = rateColor(q.rating); c.strokeStyle = q.rating ? '#fff' : '#B9B2A8'; c.lineWidth = 2.5; c.beginPath(); c.arc(p[0], p[1], 10, 0, Math.PI * 2); c.fill(); c.stroke(); });
   const me = pos(r);
-  if (me) { c.fillStyle = BEAN; c.strokeStyle = '#fff'; c.lineWidth = 5; c.beginPath(); c.arc(me[0], me[1], 17, 0, Math.PI * 2); c.fill(); c.stroke(); }
+  if (me) { c.fillStyle = rateColor(r.rating); c.strokeStyle = '#fff'; c.lineWidth = 5; c.beginPath(); c.arc(me[0], me[1], 17, 0, Math.PI * 2); c.fill(); c.stroke(); c.strokeStyle = INK; c.lineWidth = 2.5; c.beginPath(); c.arc(me[0], me[1], 23, 0, Math.PI * 2); c.stroke(); }
   c.textAlign = 'left'; c.fillStyle = SUB; c.font = `400 20px ${SANS}`;
-  c.fillText(`味の地図（${(all || []).filter(pos).length}杯）`, mx + 4, my - 14);
+  c.fillText(`珈琲テイスティングマップ（${(all || []).filter(pos).length}杯）　色＝★の数`, mx + 4, my - 14);
   c.fillText('風味の円', 70, 520);
 
   // 下の帯

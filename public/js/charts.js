@@ -101,12 +101,16 @@ export function radarSVG(scores, { size = 300, compare = null } = {}) {
   return out;
 }
 
-// 味の地図：横 = 明るい（酸）↔ 深い（苦）、縦 = 軽い ↔ 重い（コク）
+// 星の数ごとの色（薄い茶 → 濃い茶）。星なしは白抜き
+export const RATE_COLORS = ['#FFFFFF', '#DCC9AE', '#C8A77C', '#A9814F', '#7A5535', '#3B2A20'];
+export const rateColor = n => RATE_COLORS[Math.max(0, Math.min(5, n || 0))];
+
+// 珈琲テイスティングマップ：横 = 明るい（酸）↔ 深い（苦）、縦 = 軽い ↔ 重い（コク）
 export function tasteMapSVG(records, { highlight = null } = {}) {
   const W = 340, H = 340, pad = 34;
   const X = v => pad + ((v + 4.6) / 9.2) * (W - pad * 2);  // 酸味−苦味：-4〜4（端に余白）
   const Y = v => H - pad - ((v - 0.6) / 4.8) * (H - pad * 2);  // コク：1〜5（端に余白）
-  let out = `<svg class="tastemap" viewBox="0 0 ${W} ${H}" role="img" aria-label="味の地図">`;
+  let out = `<svg class="tastemap" viewBox="0 0 ${W} ${H}" role="img" aria-label="珈琲テイスティングマップ">`;
   out += `<rect x="${pad}" y="${pad}" width="${W - pad * 2}" height="${H - pad * 2}" fill="#fff" stroke="#D9D4CC"/>`;
   out += `<line x1="${W / 2}" y1="${pad}" x2="${W / 2}" y2="${H - pad}" stroke="#D9D4CC"/><line x1="${pad}" y1="${H / 2}" x2="${W - pad}" y2="${H / 2}" stroke="#D9D4CC"/>`;
   const q = (x, y, t, a) => `<text x="${x}" y="${y}" font-size="11" fill="#9b928a" text-anchor="${a}">${t}</text>`;
@@ -120,8 +124,8 @@ export function tasteMapSVG(records, { highlight = null } = {}) {
     const x = X(s.acidity - s.bitterness), y = Y(s.body);
     const jitter = (parseInt(r.id.slice(-3), 36) % 9 - 4) * 1.2;
     const hl = highlight && r.id === highlight;
-    const col = '#3B2A20';
-    out += `<a href="#/r/${r.id}"><circle cx="${f(x + jitter)}" cy="${f(y - jitter)}" r="${hl ? 9 : 6.5}" fill="${col}" fill-opacity="${hl ? 1 : .75}" stroke="#fff" stroke-width="2"><title>${escapeXml(r.title || '')}</title></circle></a>`;
+    const col = rateColor(r.rating), edge = r.rating ? '#fff' : '#B9B2A8';
+    out += `<a href="#/r/${r.id}"><circle cx="${f(x + jitter)}" cy="${f(y - jitter)}" r="${hl ? 9 : 6.5}" fill="${col}" stroke="${edge}" stroke-width="2"><title>${escapeXml(r.title || '')}</title></circle></a>`;
   });
   out += `</svg>`;
   return out;
