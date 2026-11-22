@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>珈琲テイスティングノート</title>
 <meta name="description" content="お店の一杯と、家の一杯を記録する珈琲のテイスティングノート">
-<meta name="theme-color" content="#F5F6F4">
+<meta name="theme-color" content="#FBFAF8">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -20,19 +20,17 @@
 <body data-mode="view">
 <main id="view"></main>
 
-<button type="button" id="newBtn" class="fab" aria-label="新しく記録する"><span></span></button>
-
 <nav class="tabbar" aria-label="画面の切り替え">
-  <a href="#/" aria-current="page"><span class="ti list"></span>記録</a>
-  <a href="#/map"><span class="ti map"></span>味の地図</a>
-  <a href="#/settings"><span class="ti gear"></span>設定</a>
+  <a href="#/" aria-current="page">ノート</a>
+  <button type="button" id="newBtn" class="fab" aria-label="新しく記録する"><span></span></button>
+  <a href="#/map">味の地図</a>
 </nav>
 
 <div id="sheet" class="sheet" hidden>
   <div class="sheet-body" role="dialog" aria-label="何を記録しますか">
-    <p class="sheet-title">どの一杯を記録しますか</p>
-    <a href="#/new/cafe" class="choice cafe"><span class="choice-ico"></span><strong>お店の一杯</strong><small>カフェ・喫茶店・専門店で飲んだ</small></a>
-    <a href="#/new/home" class="choice home"><span class="choice-ico"></span><strong>家の一杯</strong><small>自分で淹れた・自家焙煎した</small></a>
+    <p class="sheet-title">どこで飲みましたか</p>
+    <a href="#/new/cafe" class="choice cafe"><span class="choice-ico"></span><strong>お店で</strong></a>
+    <a href="#/new/home" class="choice home"><span class="choice-ico"></span><strong>家で</strong></a>
   </div>
 </div>
 

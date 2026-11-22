@@ -62,12 +62,11 @@ export const ITEM_BY_ID = Object.fromEntries(FLAVOR_ITEMS.map(i => [i.id, i]));
 
 // 強さ（1〜5）。好き嫌いではなく「どれだけ感じたか」
 export const ATTRS = [
-  { id: 'aroma', name: '香り', sub: 'アロマ' },
-  { id: 'acidity', name: '酸味', sub: 'アシディティ' },
-  { id: 'sweetness', name: '甘さ', sub: 'スウィートネス' },
-  { id: 'bitterness', name: '苦味', sub: 'ビターネス' },
-  { id: 'body', name: 'コク', sub: 'ボディ' },
-  { id: 'aftertaste', name: '余韻', sub: 'アフターテイスト' },
+  { id: 'acidity', name: '酸味' },
+  { id: 'sweetness', name: '甘さ' },
+  { id: 'body', name: 'コク' },
+  { id: 'bitterness', name: '苦味' },
+  { id: 'aftertaste', name: '余韻' },
 ];
 export const FRAGRANCE = { id: 'fragrance', name: '粉の香り', sub: 'フレグランス' };
 
@@ -205,6 +204,8 @@ export function suggestFlavors(r) {
   ORIGINS.forEach(([re, map]) => { if (re.test(originText)) Object.entries(map).forEach(([n, p]) => p && addName(n, p, '産地・品種によくある')); });
   // 5. 強さの記録
   const s = r.scores || {};
+  if (s.acidity >= 4) { addName('レモン', 1.3, '酸味が明るい'); addName('リンゴ', 1.2, '酸味が明るい'); addName('オレンジ', 1.2, '酸味が明るい'); }
+  if (s.body >= 4 && s.bitterness >= 3) addName('ダークチョコ', 1.2, 'コクが重い');
   if (s.bitterness >= 4) { addName('ダークチョコ', 1, '苦味が強い'); addName('カカオ', .8, '苦味が強い'); }
   if (s.sweetness >= 4) { addName('キャラメル', .6, '甘さが強い'); addName('ハチミツ', .6, '甘さが強い'); }
   if ((r.terms?.mouthfeel || []).includes('ティーライク')) addName('紅茶', 1, '口あたりがティーライク');
@@ -222,4 +223,16 @@ export function suggestFlavors(r) {
     if (out.length >= 8) break;
   }
   return out;
+}
+
+// 記録から一文を作る
+export function summarySentence(r) {
+  const s = r.scores || {}, names = (r.flavors || []).map(id => ITEM_BY_ID[id]?.name).filter(Boolean).slice(0, 2);
+  const lead = s.acidity >= 4 ? '明るい酸' : s.bitterness >= 4 ? 'しっかりした苦味' : s.sweetness >= 4 ? 'やさしい甘さ' : (s.acidity || s.bitterness) ? '穏やかな味わい' : '';
+  const one = [lead, names.join('と')].filter(Boolean).join('に、');
+  const bodyW = s.body ? (s.body <= 2 ? '軽やか' : s.body >= 4 ? '重厚' : 'ほどよいコク') : '';
+  const sweetTail = (r.terms?.finish || []).includes('甘い余韻') ? '甘い' : '';
+  const tail = s.aftertaste ? (s.aftertaste >= 4 ? `${sweetTail}余韻が長い` : s.aftertaste <= 2 ? '余韻はすっと消える' : `${sweetTail}余韻はほどよい`) : '';
+  const two = bodyW && tail ? `${bodyW}${bodyW === 'ほどよいコク' ? 'で' : 'で'}、${tail}` : (bodyW || tail);
+  return [one, two].filter(Boolean).map(x => x + '。');
 }

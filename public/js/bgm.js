@@ -11,7 +11,7 @@ function el() {
     audio = new Audio('/audio/cafe.m4a');
     audio.loop = true;
     audio.preload = 'auto';
-    audio.volume = 0.55;
+    audio.volume = 0.32;
   }
   return audio;
 }
@@ -32,7 +32,7 @@ export function bgmPlay() {
   const a = el();
   if (!a.paused) return;
   a.volume = 0;
-  a.play().then(() => { started = true; fadeTo(0.55); }).catch(() => {});
+  a.play().then(() => { started = true; fadeTo(0.32, 2500); }).catch(() => {});
 }
 export function bgmPause() { if (audio && !audio.paused) fadeTo(0, 400); }
 
@@ -49,7 +49,6 @@ export function syncButtons() {
     const on = bgmOn();
     b.setAttribute('aria-pressed', on);
     b.setAttribute('aria-label', on ? 'BGMを止める' : 'BGMを流す');
-    const label = b.querySelector('.bgm-label'); if (label) label.textContent = on ? 'BGM オン' : 'BGM オフ';
   });
 }
 

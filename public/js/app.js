@@ -1,22 +1,18 @@
-import { FLAVOR_TREE, FLAVOR_ITEMS, ITEM_BY_ID, TERM_GROUPS, TERM_BY_ID, ATTRS, FRAGRANCE, MAIN_TASTES, BREW_METHODS, ROAST_LEVELS, PROCESSES, GRINDS, DRINK_STYLES, flavorCentroid, centroidLabel, categoryMix, catOptions, catLabel, catColor, suggestFlavors } from './flavors.js';
-import { coverHTML, COVERS, coverStyle } from './covers.js';
-import { initBgm, syncButtons } from './bgm.js';
+import { FLAVOR_TREE, FLAVOR_ITEMS, ITEM_BY_ID, TERM_GROUPS, TERM_BY_ID, ATTRS, BREW_METHODS, ROAST_LEVELS, PROCESSES, GRINDS, DRINK_STYLES, flavorCentroid, centroidLabel, categoryMix, catLabel, catColor, suggestFlavors, summarySentence } from './flavors.js';
 import { wheelSVG, radarSVG, tasteMapSVG, escapeXml as esc } from './charts.js';
 import { db, uid, shrinkImage, blobToDataURL, dataURLToBlob } from './db.js';
+import { coverHTML } from './covers.js';
+import { initBgm, syncButtons } from './bgm.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const view = $('#view');
 
-// ---------- 名前 ----------
-export const APP_NAME = '珈琲テイスティングノート';
+// 写真の入れ物（古い記録の枠もそのまま読める）
+const PHOTO_KEYS = ['cup', 'place', 'food', 'menu', 'beans', 'brew'];
+const allPhotos = r => PHOTO_KEYS.flatMap(k => r.photos?.[k] || []);
+const firstPhoto = r => r.photos?.cup?.[0] || allPhotos(r)[0] || null;
 
-const PHOTO_SLOTS = {
-  cafe: [['cup', 'カップ'], ['place', '店の雰囲気'], ['food', 'デザート・料理'], ['menu', 'メニュー']],
-  home: [['cup', 'カップ'], ['beans', '豆・袋'], ['brew', '淹れている様子'], ['food', 'お菓子・料理']],
-};
-
-// ---------- 写真のURL ----------
 const urlCache = new Map();
 async function photoURL(id) {
   if (!id) return null;
@@ -25,15 +21,14 @@ async function photoURL(id) {
   if (!blob) return null;
   const u = URL.createObjectURL(blob); urlCache.set(id, u); return u;
 }
-const firstPhoto = r => (r.photos?.cup?.[0]) || Object.values(r.photos || {}).flat()[0] || null;
 
 // ---------- 小物 ----------
-function toast(msg, ms = 2600) {
+function toast(msg, ms = 2400) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, ms);
 }
 const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
-const fmtDate = s => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${y}年${+m}月${+d}日`; };
+const fmtDate = s => { if (!s) return ''; const [, m, d] = s.split('-'); return `${+m}月${+d}日`; };
 const get = (o, path) => path.split('.').reduce((a, k) => a?.[k], o);
 const set = (o, path, v) => { const ks = path.split('.'); const last = ks.pop(); ks.reduce((a, k) => (a[k] ??= {}), o)[last] = v; };
 const stars = n => '★'.repeat(n || 0) + '☆'.repeat(5 - (n || 0));
@@ -43,22 +38,19 @@ function titleOf(r) {
   return r.home?.bean || '家の一杯';
 }
 function subOf(r) {
-  if (r.type === 'cafe') return [r.cafe?.menuName ? r.cafe?.shop : '', fmtDate(r.date)].filter(Boolean).join('　');
-  const h = r.home || {};
-  return [h.selfRoast ? '自家焙煎' : h.roaster, h.method, fmtDate(r.date)].filter(Boolean).join('　');
+  const where = r.type === 'cafe' ? (r.cafe?.menuName ? r.cafe?.shop : '') || 'お店で' : '家で';
+  return [where, fmtDate(r.date)].filter(Boolean).join('・');
 }
-
-// 円形サムネイル：外周に選んだ風味の色の輪
 function ringStyle(r) {
   const mix = categoryMix(r.flavors || []);
   if (!mix.length) return 'background:#E4DED6';
   const total = mix.reduce((a, m) => a + m.n, 0);
   let acc = 0;
-  const stops = mix.map(m => { const a = acc / total * 360, b = (acc += m.n) / total * 360; return `${m.cat.color} ${a}deg ${b}deg`; });
-  return `background:conic-gradient(${stops.join(',')})`;
+  return `background:conic-gradient(${mix.map(m => { const a = acc / total * 360, b = (acc += m.n) / total * 360; return `${m.cat.color} ${a}deg ${b}deg`; }).join(',')})`;
 }
+const BGM_BTN = '<button type="button" class="icon-btn" data-bgm-toggle aria-pressed="true"><span class="bgm-ico" aria-hidden="true"></span></button>';
 
-// ---------- API ----------
+// ---------- 通信 ----------
 const token = () => localStorage.getItem('ippai-token') || '';
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { 'content-type': 'application/json', 'x-app-token': token(), ...(opts.headers || {}) } });
@@ -66,7 +58,6 @@ async function api(path, opts = {}) {
   if (!res.ok) throw new Error(data.error || `通信に失敗しました（${res.status}）`);
   return data;
 }
-
 function getPosition() {
   return new Promise((res, rej) => {
     if (!navigator.geolocation) return rej(new Error('この端末では位置情報が使えません'));
@@ -76,329 +67,300 @@ function getPosition() {
   });
 }
 
-// Worker が使えないとき用：端末から直接 OpenStreetMap を検索
-async function nearbyDirect(lat, lon) {
-  const q = `[out:json][timeout:15];(nwr(around:600,${lat},${lon})[amenity=cafe];nwr(around:600,${lat},${lon})[shop=coffee];nwr(around:600,${lat},${lon})[cuisine~"coffee"];);out center tags 40;`;
-  const res = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'content-type': 'application/x-www-form-urlencoded' } });
-  const j = await res.json();
-  return shapeShops(j.elements || [], lat, lon);
-}
-export function shapeShops(elements, lat, lon) {
-  const seen = new Set();
-  return elements.map(e => {
-    const t = e.tags || {}; const la = e.lat ?? e.center?.lat, lo = e.lon ?? e.center?.lon;
-    const name = t['name:ja'] || t.name; if (!name || la == null) return null;
-    const addr = [t['addr:province'], t['addr:city'], t['addr:suburb'], t['addr:quarter'], t['addr:neighbourhood'], t['addr:block_number'], t['addr:housenumber']].filter(Boolean).join('') || t['addr:full'] || '';
-    const d = distance(lat, lon, la, lo);
-    return { name, address: addr, lat: la, lon: lo, distance: Math.round(d) };
-  }).filter(Boolean).filter(s => { const k = s.name + Math.round(s.lat * 1e4); if (seen.has(k)) return false; seen.add(k); return true; })
-    .sort((a, b) => a.distance - b.distance).slice(0, 12);
-}
-function distance(a, b, c, d) {
-  const R = 6371000, r = x => x * Math.PI / 180;
-  const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(h));
-}
-
 // ---------- 一覧 ----------
-let listFilter = 'all';
 async function renderList() {
   const all = await db.allRecords();
-  const list = all.filter(r => listFilter === 'all' || r.type === listFilter);
-  const counts = { all: all.length, cafe: all.filter(r => r.type === 'cafe').length, home: all.filter(r => r.type === 'home').length };
   view.innerHTML = `
-    <header class="top">
-      <div class="brand-row"><h1 class="brand"><a href="#/cover" aria-label="表紙を見る">珈琲テイスティングノート</a></h1><button type="button" class="bgm-btn" data-bgm-toggle aria-pressed="true"><span class="bgm-ico" aria-hidden="true"></span></button></div>
-      <div class="seg" role="tablist">
-        ${[['all', 'すべて'], ['cafe', 'お店'], ['home', '家']].map(([k, l]) => `<button role="tab" aria-selected="${listFilter === k}" data-filter="${k}">${l}<span>${counts[k]}</span></button>`).join('')}
-      </div>
-    </header>
-    ${list.length ? `<ul class="cups">${list.map(r => `
+    <header class="nav"><a class="nav-link" href="#/settings">設定</a>${BGM_BTN}</header>
+    <h1 class="big"><a href="#/cover">ノート</a></h1>
+    ${all.length ? `<ul class="cups">${all.map(r => `
       <li><a href="#/r/${r.id}" class="cup-row">
-        <span class="ring" style="${ringStyle(r)}"><span class="thumb" data-photo="${firstPhoto(r) || ''}">${firstPhoto(r) ? '' : `<span class="nophoto"></span>`}</span></span>
-        <span class="cup-text">
-          <span class="cup-kind ${r.type}">${r.type === 'cafe' ? 'お店' : '家'}</span>
-          <strong>${esc(titleOf(r))}</strong>
-          <small>${esc(subOf(r))}</small>
-          <small class="notes">${(r.flavors || []).length ? r.flavors.slice(0, 4).map(id => esc(ITEM_BY_ID[id]?.name || '')).join('、') : (r.flavorCats || r.aromaCats || []).slice(0, 4).map(k => esc(catLabel(k))).join('、')}</small>
-        </span>
-        <span class="cup-rate" aria-label="好み ${r.rating || 0}">${r.rating ? '★' + r.rating : ''}</span>
+        <span class="ring" style="${ringStyle(r)}"><span class="thumb" data-photo="${firstPhoto(r) || ''}">${firstPhoto(r) ? '' : '<span class="nophoto"></span>'}</span></span>
+        <span class="cup-text"><strong>${esc(titleOf(r))}</strong><small>${esc(subOf(r))}</small></span>
+        <span class="cup-rate">${r.rating ? '★' + r.rating : ''}</span>
       </a></li>`).join('')}</ul>`
-      : `<div class="empty">
-          <div class="empty-cup"></div>
-          <p>${all.length ? 'この条件の記録はまだありません。' : 'まだ一杯も記録がありません。<br>右下の「＋」から、最初の一杯を残しましょう。'}</p>
-        </div>`}
-  `;
-  $$('[data-filter]').forEach(b => b.onclick = () => { listFilter = b.dataset.filter; renderList(); });
+      : `<div class="empty"><div class="empty-cup"></div><p>最初の一杯を、下の「＋」から。</p></div>`}`;
   $$('.thumb[data-photo]').forEach(async el => { const u = await photoURL(el.dataset.photo); if (u) el.style.backgroundImage = `url(${u})`; });
 }
 
-// ---------- 入力フォーム ----------
-let F = null;            // 編集中の記録
-let newPhotos = [];      // この編集で追加した写真（取り消し時に消す）
-let removedPhotos = [];  // この編集で外した写真（保存時に消す）
+// ---------- 記録する（4つの問い） ----------
+let F = null, step = 0, isEdit = false, proposal = null;
+let newPhotos = [], removedPhotos = [];
 let activeCat = FLAVOR_TREE[0].id;
+const STEPS = ['どの一杯ですか', 'どんな味でしたか', '風味はこのあたり', '好きでしたか'];
+const SWEET_WORDS = ['', 'ほのか', '控えめ', 'ほどよい', 'しっかり', 'とても甘い'];
+const AFTER_WORDS = ['', 'すっと消える', '短め', 'ほどよい', '長い', 'とても長い'];
 
 function blankRecord(type) {
-  return {
-    id: uid(), type, date: today(), createdAt: new Date().toISOString(),
+  return { id: uid(), type, date: today(), createdAt: new Date().toISOString(),
     cafe: type === 'cafe' ? {} : undefined, home: type === 'home' ? {} : undefined,
-    aromaCats: [], flavorCats: [], mainTastes: [], flavors: [], terms: {}, scores: {}, rating: 0, again: false, memo: '',
-    photos: Object.fromEntries(PHOTO_SLOTS[type].map(([k]) => [k, []])),
-  };
+    flavors: [], terms: {}, scores: {}, rating: 0, memo: '', photos: { cup: [] } };
 }
-
-const chips = (field, options, { multi = false } = {}) => {
+const chips = (field, options, multi = false) => {
   const cur = get(F, field);
-  return `<div class="chips" data-chips="${field}" data-multi="${multi}">${options.map(o => {
-    const on = multi ? (cur || []).includes(o) : cur === o;
-    return `<button type="button" class="chip" aria-pressed="${on}" data-v="${esc(o)}">${esc(o)}</button>`;
-  }).join('')}</div>`;
+  return `<div class="chips" data-chips="${field}" data-multi="${multi}">${options.map(o => `<button type="button" class="chip" aria-pressed="${multi ? (cur || []).includes(o) : cur === o}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
 };
 const input = (field, label, { type = 'text', ph = '', unit = '', mode = '' } = {}) =>
   `<label class="field"><span>${label}</span><span class="in"><input type="${type}" data-field="${field}" value="${esc(get(F, field) ?? '')}" placeholder="${ph}" ${mode ? `inputmode="${mode}"` : ''}>${unit ? `<em>${unit}</em>` : ''}</span></label>`;
+const group = (label, body) => `<div class="field"><span>${label}</span>${body}</div>`;
+const termGroup = id => group(TERM_BY_ID[id].title, chips('terms.' + id, TERM_BY_ID[id].terms, true));
 
-function photoSlots() {
-  return `<div class="photo-grid">${PHOTO_SLOTS[F.type].map(([k, l]) => `
-    <div class="slot" data-slot="${k}">
-      <div class="slot-head">${l}</div>
-      <div class="slot-body">
-        ${(F.photos[k] || []).map(id => `<button type="button" class="ph" data-ph="${id}" aria-label="${l}の写真を外す"><span class="x">×</span></button>`).join('')}
-        <label class="add-ph"><input type="file" accept="image/*" multiple data-add="${k}" hidden><span>＋</span></label>
+function pasteBox(kind) {
+  return `<details class="more" id="pasteBox"><summary>うまく読めないときは、文字を貼り付ける</summary>
+    <p class="hint">写真の文字を長押しして「コピー」し、ここに貼り付けます。</p>
+    <textarea id="pasteText" rows="3"></textarea>
+    <button type="button" class="act" id="pasteRead" data-kind="${kind}">貼り付けた文から入れる</button></details>`;
+}
+
+function stepWhich() {
+  const cafe = F.type === 'cafe';
+  return cafe ? `
+    <label class="act primary"><input type="file" accept="image/*" id="menuShot" hidden>メニューを撮って読み取る</label>
+    <div id="menuList"></div>
+    ${input('cafe.menuName', '飲んだコーヒー', { ph: '例：エチオピア ゲデオ' })}
+    <button type="button" class="act" id="findShop">現在地からお店を探す</button>
+    <div id="shopList"></div>
+    ${input('cafe.shop', 'お店', { ph: '店名' })}
+    ${group('写真', '<div id="photos"></div>')}
+    <details class="more"><summary>くわしく書く</summary>
+      ${input('date', '日付', { type: 'date' })}
+      ${input('cafe.address', '場所')}
+      ${input('cafe.origin', '産地')}
+      ${group('精製', chips('cafe.process', PROCESSES))}
+      ${group('焙煎度', chips('cafe.roast', ROAST_LEVELS))}
+      ${group('淹れ方', chips('cafe.method', BREW_METHODS))}
+      ${group('温度', chips('cafe.style', DRINK_STYLES))}
+      ${input('cafe.price', '値段', { mode: 'numeric', unit: '円' })}
+      ${input('cafe.menuNotes', 'メニューにあった味の説明')}
+      ${input('cafe.dessert', '一緒に食べたもの')}
+      ${pasteBox('menu')}
+    </details>` : `
+    <label class="act primary"><input type="file" accept="image/*" id="bagShot" hidden>豆の袋を撮って読み取る</label>
+    <div id="menuList"></div>
+    ${input('home.bean', '豆', { ph: '例：グアテマラ ウエウエテナンゴ' })}
+    ${group('淹れ方', chips('home.method', BREW_METHODS))}
+    ${group('写真', '<div id="photos"></div>')}
+    <details class="more"><summary>くわしく書く</summary>
+      ${input('date', '日付', { type: 'date' })}
+      <div class="chips solo"><button type="button" class="chip" id="selfRoast" aria-pressed="${!!F.home.selfRoast}">自家焙煎</button></div>
+      <div id="roasterBox" ${F.home.selfRoast ? 'hidden' : ''}>${input('home.roaster', '焙煎したお店')}</div>
+      ${input('home.roastDate', '焙煎日', { type: 'date' })}
+      ${input('home.origin', '産地')}
+      ${input('home.variety', '品種')}
+      ${group('精製', chips('home.process', PROCESSES))}
+      ${group('焙煎度', chips('home.roast', ROAST_LEVELS))}
+      ${group('温度', chips('home.style', DRINK_STYLES))}
+      <div class="recipe">
+        ${input('home.dose', '豆', { mode: 'decimal', unit: 'g' })}
+        ${input('home.water', '湯', { mode: 'decimal', unit: 'g' })}
+        ${input('home.temp', '湯温', { mode: 'decimal', unit: '℃' })}
+        ${input('home.time', '時間', { ph: '2:30' })}
       </div>
-    </div>`).join('')}</div>`;
+      <p class="ratio" id="ratio"></p>
+      ${group('挽き目', chips('home.grind', GRINDS))}
+      ${input('home.bagNotes', '袋にあった味の説明')}
+      ${input('home.food', '一緒に食べたもの')}
+      ${pasteBox('bag')}
+    </details>`;
 }
 
-// ---- テイスティング：味わう順に並べる ----
-const termChips = id => chips('terms.' + id, TERM_BY_ID[id].terms, { multi: true });
-const termBlock = id => { const g = TERM_BY_ID[id]; return `<div class="term"><h3>${g.title}<small>${g.sub}</small></h3>${termChips(id)}</div>`; };
-
-function scoreRow(a, lo = '弱い', hi = '強い') {
-  return `<div class="score-row"><span class="score-name">${a.name}<small>${a.sub}</small></span>
-    <span class="dots" data-score="${a.id}" data-lo="${lo}" data-hi="${hi}">${[1, 2, 3, 4, 5].map(n => `<button type="button" aria-label="${a.name} ${n}" aria-pressed="${(F.scores[a.id] || 0) >= n}" data-n="${n}"></button>`).join('')}</span></div>`;
+function slider(id, label, words) {
+  const v = F.scores[id];
+  return `<div class="sl${v ? '' : ' unset'}"><label><span>${label}</span><em data-word="${id}">${v ? words[v] : ''}</em></label>
+    <input type="range" min="1" max="5" step="1" value="${v || 3}" data-range="${id}" aria-label="${label}"></div>`;
 }
-const attr = id => ATTRS.find(a => a.id === id);
-
-// 大きな分類 → 選ぶと一段細かい分類が出る
-function catPicker(field) {
-  const cur = F[field] || [];
-  return `<div class="catpick" data-catpick="${field}">${catOptions().map(c => {
-    const on = cur.includes(c.id);
-    return `<div class="catrow${on ? ' open' : ''}"><button type="button" class="chip flavor" style="--c:${c.color}" aria-pressed="${on}" data-cat-key="${c.id}">${c.name}</button>${on ? `<span class="subcats">${c.groups.map(g => `<button type="button" class="chip sub" style="--c:${c.color}" aria-pressed="${cur.includes(g.id)}" data-cat-key="${g.id}">${g.name}</button>`).join('')}</span>` : ''}</div>`;
-  }).join('')}</div>`;
-}
-
-function tastingBlock() {
-  const isHome = F.type === 'home';
+function stepTaste() {
   return `
-    <section class="block step">
-      <h2><span class="no">1</span>香り<small>フレグランス・アロマ</small></h2>
-      <p class="hint">カップに鼻を近づけて。まずは大きな分類だけで十分です。</p>
-      <div class="scores">${isHome ? scoreRow(FRAGRANCE) : ''}${scoreRow(attr('aroma'))}</div>
-      <h3 class="mini">感じた香り</h3>
-      ${catPicker('aromaCats')}
-    </section>
-    <section class="block step">
-      <h2><span class="no">2</span>味<small>テイスト</small></h2>
-      <div class="term"><h3>主な味<small>2つまで</small></h3>${chips('mainTastes', MAIN_TASTES, { multi: true })}</div>
-      <div class="scores">${scoreRow(attr('acidity'))}${scoreRow(attr('sweetness'))}${scoreRow(attr('bitterness'))}</div>
-      ${termBlock('acidity')}
-    </section>
-    <section class="block step">
-      <h2><span class="no">3</span>口あたり<small>マウスフィール</small></h2>
-      <div class="scores">${scoreRow(attr('body'), '軽い', '重い')}</div>
-      ${termChips('mouthfeel')}
-    </section>
-    <section class="block step">
-      <h2><span class="no">4</span>風味<small>フレーバー</small></h2>
-      <p class="hint">口に含み、すすって鼻に抜ける香り。当てはまる分類をすべて選びます。</p>
-      ${catPicker('flavorCats')}
-    </section>
-    <section class="block step">
-      <h2><span class="no">5</span>余韻<small>アフターテイスト</small></h2>
-      <div class="scores">${scoreRow(attr('aftertaste'), '短い', '長い')}</div>
-      ${termChips('finish')}
-      ${termBlock('cooling')}
-    </section>
-    <section class="block step">
-      <h2><span class="no">6</span>印象と好み</h2>
-      ${termChips('impression')}
-      <div id="radarBox" class="radar-box">${radarSVG(F.scores)}</div>
-      <p class="hint center">ここまでは「どれだけ感じたか」。好き嫌いは下で付けます。</p>
-      <div class="field"><span>好み</span><span class="stars" id="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-star="${n}" aria-label="好み ${n}" aria-pressed="${F.rating >= n}">★</button>`).join('')}</span></div>
-      <div class="chips"><button type="button" class="chip" id="again" aria-pressed="${!!F.again}">また飲みたい</button></div>
-    </section>
-    <section class="block step" id="wheelStep">
-      <h2><span class="no">7</span>風味の円<small>フレーバーホイール</small></h2>
-      <p class="hint">ここまでの記録から、円のどこに当たりそうかを提案します。合っているものを選び、足りないものは円をタップして足してください。</p>
-      <div id="proposal"></div>
-      <div class="wheel-wrap" id="wheelBox"></div>
-      <p class="centroid" id="centroid"></p>
-      <details class="more" id="moreWords"><summary>言葉の一覧から選ぶ</summary>
-        <div class="cat-tabs" role="tablist">${FLAVOR_TREE.map(c => `<button type="button" role="tab" data-cat="${c.id}" aria-selected="${c.id === activeCat}" style="--c:${c.color}">${c.name}</button>`).join('')}</div>
-        <div id="flavorChips"></div>
-      </details>
-      <p class="picked" id="picked"></p>
-    </section>`;
+    <p class="hint">点を動かすと、酸味・苦味・コクが記録されます。</p>
+    <div class="pad" id="pad" role="application" aria-label="味の位置">
+      <span class="t">重い</span><span class="b">軽い</span><span class="l">苦味</span><span class="r">酸味</span>
+      <div class="knob" id="knob" hidden></div>
+    </div>
+    ${slider('sweetness', '甘さ', SWEET_WORDS)}
+    ${slider('aftertaste', '余韻', AFTER_WORDS)}
+    <details class="more"><summary>くわしく書く</summary>
+      ${termGroup('acidity')}${termGroup('mouthfeel')}${termGroup('finish')}${termGroup('cooling')}
+    </details>`;
+}
+function stepFlavor() {
+  return `
+    <p class="hint">合うものに触れてください。円からも選べます。</p>
+    <div id="proposal" class="sugg"></div>
+    <div class="wheel-wrap" id="wheelBox"></div>
+    <details class="more" id="moreWords"><summary>言葉の一覧から選ぶ</summary>
+      <div class="cat-tabs">${FLAVOR_TREE.map(c => `<button type="button" data-cat="${c.id}" aria-selected="${c.id === activeCat}" style="--c:${c.color}">${c.name}</button>`).join('')}</div>
+      <div id="flavorChips"></div>
+    </details>`;
+}
+function stepLike() {
+  return `
+    <div class="stars big-stars" id="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-star="${n}" aria-label="${n}" aria-pressed="${F.rating >= n}">★</button>`).join('')}</div>
+    <p class="sent" id="sentence"></p>
+    <label class="field"><span>メモ</span><textarea data-field="memo" rows="4" placeholder="気づいたこと、次に試すこと">${esc(F.memo || '')}</textarea></label>`;
+}
+
+async function renderForm(type, base, edit = false) {
+  F = base ? structuredClone(base) : blankRecord(type);
+  F.photos ??= {}; F.photos.cup ??= []; F.flavors ??= []; F.terms ??= {}; F.scores ??= {};
+  if (!F.taste && F.scores.acidity && F.scores.bitterness && F.scores.body) F.taste = { x: (F.scores.acidity - F.scores.bitterness) / 4, y: (F.scores.body - 3) / 2 };
+  isEdit = edit; step = 0; proposal = null; newPhotos = []; removedPhotos = [];
+  const bodies = [stepWhich(), stepTaste(), stepFlavor(), stepLike()];
+  view.innerHTML = `
+    <header class="nav form-nav"><button type="button" class="nav-link" id="back">戻る</button><span class="dots" id="dots">${STEPS.map(() => '<i></i>').join('')}</span><span class="nav-link ghost">戻る</span></header>
+    <form id="form" autocomplete="off">${bodies.map((b, i) => `<section class="step" data-step="${i}" hidden><h1 class="q">${STEPS[i]}</h1>${b}</section>`).join('')}</form>
+    <div class="savebar"><button type="button" class="save" id="next">次へ</button></div>`;
+  bindForm(); renderFlavorChips(); refreshPhotos(); refreshRatio(); placeKnob(); showStep(0);
+}
+
+function showStep(n) {
+  step = n;
+  $$('.step').forEach(s => { s.hidden = +s.dataset.step !== n; });
+  $$('#dots i').forEach((d, i) => d.classList.toggle('on', i <= n));
+  $('#next').textContent = n === STEPS.length - 1 ? '保存する' : '次へ';
+  if (n === 2) { if (!proposal) proposal = suggestFlavors(F); refreshFlavor(); }
+  if (n === 3) $('#sentence').innerHTML = summarySentence(F).join('<br>');
+  window.scrollTo(0, 0);
+}
+
+// 味の点：横＝酸味↔苦味、縦＝コク
+function placeKnob() {
+  const k = $('#knob'); if (!k || !F.taste) return;
+  k.hidden = false; k.style.left = (F.taste.x + 1) / 2 * 100 + '%'; k.style.top = (1 - F.taste.y) / 2 * 100 + '%';
+}
+function padMove(e) {
+  const r = $('#pad').getBoundingClientRect(), c = v => Math.max(-1, Math.min(1, v));
+  const x = c(((e.clientX - r.left) / r.width) * 2 - 1), y = c(1 - ((e.clientY - r.top) / r.height) * 2);
+  F.taste = { x, y };
+  const five = v => Math.max(1, Math.min(5, Math.round(v)));
+  Object.assign(F.scores, { acidity: five(3 + 2 * x), bitterness: five(3 - 2 * x), body: five(3 + 2 * y) });
+  placeKnob();
 }
 
 function renderFlavorChips() {
   const cat = FLAVOR_TREE.find(c => c.id === activeCat);
-  $('#flavorChips').innerHTML = cat.groups.map(g => `
-    <div class="fgroup"><span class="fgroup-name">${g.name}</span>
-      <div class="chips">${g.items.map(n => { const id = `${cat.id}:${n}`; return `<button type="button" class="chip flavor" style="--c:${cat.color}" aria-pressed="${F.flavors.includes(id)}" data-flavor="${id}">${n}</button>`; }).join('')}</div>
-    </div>`).join('');
+  $('#flavorChips').innerHTML = cat.groups.map(g => `<div class="fgroup"><span class="fgroup-name">${g.name}</span><div class="chips">${g.items.map(n => { const id = `${cat.id}:${n}`; return `<button type="button" class="chip flavor" style="--c:${cat.color}" aria-pressed="${F.flavors.includes(id)}" data-flavor="${id}">${n}</button>`; }).join('')}</div></div>`).join('');
   $$('.cat-tabs [data-cat]').forEach(b => b.setAttribute('aria-selected', b.dataset.cat === activeCat));
 }
-
-let proposal = null;   // [{id, score, reasons}] 最後に出した提案
-function makeProposal() {
-  proposal = suggestFlavors(F);
-  renderProposal();
-  refreshTasting();
-}
-function renderProposal() {
-  const box = $('#proposal'); if (!box) return;
-  if (!proposal) { box.innerHTML = `<button type="button" class="act" id="propose">ここまでの記録から提案する</button>`; return; }
-  if (!proposal.length) {
-    box.innerHTML = `<p class="busy">手がかりが少ないため、提案できませんでした。香り・風味の分類や酸の質を選ぶと提案が出ます。円を見ながら選ぶこともできます。</p><button type="button" class="act ghost" id="propose">もう一度提案する</button>`;
-    return;
-  }
-  const allOn = proposal.every(p => F.flavors.includes(p.id));
-  box.innerHTML = `
-    <div class="sugg-head"><strong>この一杯は、円のこのあたりだと思います</strong><small>点線が提案です。タップで選ぶ／外す。</small></div>
-    <ul class="sugg">${proposal.map(p => { const it = ITEM_BY_ID[p.id]; const on = F.flavors.includes(p.id); return `
-      <li><button type="button" class="sugg-item" aria-pressed="${on}" data-sugg="${p.id}" style="--c:${it.cat.color}">
-        <span class="sugg-dot"></span><span class="sugg-name">${it.name}</span><small>${esc(p.reasons.slice(0, 2).join('、'))}</small>
-      </button></li>`; }).join('')}</ul>
-    <div class="sugg-actions">
-      <button type="button" class="act" id="acceptAll" ${allOn ? 'disabled' : ''}>${allOn ? '提案をすべて選びました' : '提案をまとめて選ぶ'}</button>
-      <button type="button" class="act ghost" id="propose">入力を直したので提案し直す</button>
-    </div>`;
-}
-
-function refreshTasting() {
-  if (!$('#wheelBox')) return;
+function refreshFlavor() {
+  const ids = [...new Set([...(proposal || []).map(p => p.id), ...F.flavors])];
+  $('#proposal').innerHTML = ids.length
+    ? ids.map(id => { const it = ITEM_BY_ID[id]; return it ? `<button type="button" class="sg" aria-pressed="${F.flavors.includes(id)}" data-flavor="${id}" style="--c:${it.cat.color}">${it.name}</button>` : ''; }).join('')
+    : '<p class="hint">円に触れて選んでください。</p>';
   $('#wheelBox').innerHTML = wheelSVG(new Set(F.flavors), { interactive: true, suggested: (proposal || []).map(p => p.id) });
-  const c = flavorCentroid(F.flavors);
-  $('#centroid').innerHTML = c ? `味の重心：<strong>${centroidLabel(c)}</strong>` : '';
-  $('#picked').textContent = F.flavors.length ? '選んだ風味：' + F.flavors.map(id => ITEM_BY_ID[id]?.name).join('、') : '';
-  $$('[data-flavor]').forEach(b => b.setAttribute('aria-pressed', F.flavors.includes(b.dataset.flavor)));
-  $$('[data-sugg]').forEach(b => b.setAttribute('aria-pressed', F.flavors.includes(b.dataset.sugg)));
-  const all = $('#acceptAll');
-  if (all && proposal) { const allOn = proposal.every(p => F.flavors.includes(p.id)); all.disabled = allOn; all.textContent = allOn ? '提案をすべて選びました' : '提案をまとめて選ぶ'; }
+  $$('#flavorChips [data-flavor]').forEach(b => b.setAttribute('aria-pressed', F.flavors.includes(b.dataset.flavor)));
 }
-
 function toggleFlavor(id) {
   F.flavors = F.flavors.includes(id) ? F.flavors.filter(x => x !== id) : [...F.flavors, id];
   if (navigator.vibrate) navigator.vibrate(8);
-  refreshTasting();
+  refreshFlavor();
 }
 
-// 風味の円の段に来たら、自動で一度だけ提案する
-function watchWheelStep() {
-  const el = $('#wheelStep'); if (!el || !('IntersectionObserver' in window)) return;
-  const io = new IntersectionObserver(ents => {
-    if (ents.some(e => e.isIntersecting)) { io.disconnect(); if (!proposal) makeProposal(); }
-  }, { rootMargin: '0px 0px -30% 0px' });
-  io.observe(el);
+function refreshRatio() {
+  const el = $('#ratio'); if (!el) return;
+  const d = parseFloat(F.home.dose), w = parseFloat(F.home.water);
+  el.textContent = d > 0 && w > 0 ? `比率 1 : ${(w / d).toFixed(1)}` : '';
+}
+async function refreshPhotos() {
+  const ids = allPhotos(F);
+  $('#photos').innerHTML = `<div class="strip">${ids.map(id => `<button type="button" class="ph" data-ph="${id}" aria-label="写真を外す"><span class="x">×</span></button>`).join('')}<label class="add-ph"><input type="file" accept="image/*" multiple id="addPhoto" hidden><span>＋</span></label></div>`;
+  $$('#photos .ph').forEach(async el => { const u = await photoURL(el.dataset.ph); if (u) el.style.backgroundImage = `url(${u})`; });
+}
+async function addPhotos(files, slot = 'cup') {
+  for (const file of files) {
+    const blob = await shrinkImage(file); const id = uid();
+    await db.putPhoto(id, blob); newPhotos.push(id); (F.photos[slot] ??= []).push(id);
+  }
+  refreshPhotos();
 }
 
-async function renderForm(type, base, isEdit = false) {
-  F = base ? structuredClone(base) : blankRecord(type);
-  type = F.type;
-  F.photos ??= {}; PHOTO_SLOTS[type].forEach(([k]) => F.photos[k] ??= []);
-  F.aromaCats ??= []; F.flavorCats ??= []; F.mainTastes ??= []; F.flavors ??= []; F.terms ??= {}; F.scores ??= {};
-  newPhotos = []; removedPhotos = [];
-  const isCafe = type === 'cafe';
-  view.innerHTML = `
-    <header class="form-top">
-      <button type="button" class="back" id="cancel">戻る</button>
-      <h1>${isEdit ? '記録を直す' : isCafe ? 'お店の一杯' : '家の一杯'}</h1>
-      <span></span>
-    </header>
-    <form id="form" autocomplete="off">
-    ${isCafe ? `
-      <section class="block">
-        <h2>お店</h2>
-        <button type="button" class="act" id="findShop"><span class="ico pin"></span>現在地からお店を探す</button>
-        <div id="shopList"></div>
-        ${input('cafe.shop', '店名', { ph: '例：〇〇珈琲店' })}
-        ${input('cafe.address', '場所', { ph: '住所や最寄り駅（任意）' })}
-        ${input('date', '日付', { type: 'date' })}
-      </section>
-      <section class="block">
-        <h2>飲んだ一杯</h2>
-        <label class="act"><input type="file" accept="image/*" id="menuShot" hidden><span class="ico cam"></span>メニューを撮って読み取る</label>
-        ${pasteBox('menu')}
-        <div id="menuList"></div>
-        ${input('cafe.menuName', 'メニュー名', { ph: '例：エチオピア イルガチェフェ' })}
-        ${input('cafe.origin', '産地', { ph: '国・地域・農園' })}
-        <div class="field"><span>精製</span>${chips('cafe.process', PROCESSES)}</div>
-        <div class="field"><span>焙煎度</span>${chips('cafe.roast', ROAST_LEVELS)}</div>
-        <div class="field"><span>淹れ方</span>${chips('cafe.method', BREW_METHODS)}</div>
-        <div class="field"><span>温度</span>${chips('cafe.style', DRINK_STYLES)}</div>
-        ${input('cafe.price', '値段', { type: 'text', mode: 'numeric', unit: '円' })}
-        ${input('cafe.menuNotes', 'メニューにあった味の説明', { ph: '例：ベリー、チョコ、明るい酸' })}
-      </section>`
-    : `
-      <section class="block">
-        <h2>豆</h2>
-        <label class="act"><input type="file" accept="image/*" id="bagShot" hidden><span class="ico cam"></span>豆の袋を撮って読み取る</label>
-        ${pasteBox('bag')}
-        <div id="menuList"></div>
-        ${input('home.bean', '豆の名前', { ph: '例：グアテマラ ウエウエテナンゴ' })}
-        <div class="field"><span>焙煎</span>
-          <div class="chips" data-chips="home.selfRoastLabel"><button type="button" class="chip" id="selfRoast" aria-pressed="${!!F.home.selfRoast}">自家焙煎</button></div>
-        </div>
-        <div id="roasterBox" ${F.home.selfRoast ? 'hidden' : ''}>${input('home.roaster', '焙煎したお店', { ph: '豆を買ったお店' })}</div>
-        ${input('home.roastDate', '焙煎日', { type: 'date' })}
-        ${input('home.origin', '産地', { ph: '国・地域・農園' })}
-        ${input('home.variety', '品種', { ph: '例：ゲイシャ、ブルボン' })}
-        <div class="field"><span>精製</span>${chips('home.process', PROCESSES)}</div>
-        <div class="field"><span>焙煎度</span>${chips('home.roast', ROAST_LEVELS)}</div>
-        ${input('home.bagNotes', '袋にあった味の説明', { ph: '例：ピーチ、ジャスミン' })}
-      </section>
-      <section class="block">
-        <h2>淹れ方<small>レシピ</small></h2>
-        ${input('date', '日付', { type: 'date' })}
-        <div class="field"><span>器具</span>${chips('home.method', BREW_METHODS)}</div>
-        <div class="field"><span>温度</span>${chips('home.style', DRINK_STYLES)}</div>
-        <div class="recipe">
-          ${input('home.dose', '豆', { mode: 'decimal', unit: 'g' })}
-          ${input('home.water', '湯', { mode: 'decimal', unit: 'g' })}
-          ${input('home.temp', '湯温', { mode: 'decimal', unit: '℃' })}
-          ${input('home.time', '時間', { ph: '2:30', unit: '分:秒' })}
-        </div>
-        <p class="ratio" id="ratio"></p>
-        <div class="field"><span>挽き目</span>${chips('home.grind', GRINDS)}</div>
-      </section>`}
-      <section class="block">
-        <h2>写真</h2>
-        <div id="photos">${photoSlots()}</div>
-      </section>
-      ${tastingBlock()}
-      <section class="block">
-        <h2>メモ</h2>
-        ${isCafe ? input('cafe.dessert', '一緒に食べたもの', { ph: '例：自家製プリン' }) : input('home.food', '一緒に食べたもの', { ph: '例：フィナンシェ' })}
-        <label class="field"><span>メモ</span><textarea data-field="memo" rows="4" placeholder="気づいたこと、次に試すこと">${esc(F.memo || '')}</textarea></label>
-      </section>
-    </form>
-    <div class="savebar"><button type="button" class="save" id="save">保存する</button></div>
-  `;
-  proposal = null;
-  bindForm();
-  renderFlavorChips(); renderProposal(); refreshTasting(); refreshPhotos(); refreshRatio(); watchWheelStep();
+function bindForm() {
+  const form = $('#form');
+  form.addEventListener('input', e => {
+    const rg = e.target.dataset.range;
+    if (rg) { const v = +e.target.value; F.scores[rg] = v; e.target.closest('.sl').classList.remove('unset'); $(`[data-word="${rg}"]`).textContent = (rg === 'sweetness' ? SWEET_WORDS : AFTER_WORDS)[v]; return; }
+    const f = e.target.dataset.field; if (!f) return;
+    set(F, f, e.target.value);
+    if (f === 'home.dose' || f === 'home.water') refreshRatio();
+  });
+  form.addEventListener('click', e => {
+    const fl = e.target.closest('[data-flavor]'); if (fl) return toggleFlavor(fl.dataset.flavor);
+    const seg = e.target.closest('.wheel .seg'); if (seg) return toggleFlavor(seg.dataset.id);
+    const tab = e.target.closest('.cat-tabs [data-cat]'); if (tab) { activeCat = tab.dataset.cat; return renderFlavorChips(); }
+    const chip = e.target.closest('.chip');
+    if (chip?.id === 'selfRoast') { F.home.selfRoast = !F.home.selfRoast; chip.setAttribute('aria-pressed', F.home.selfRoast); $('#roasterBox').hidden = F.home.selfRoast; return; }
+    if (chip) {
+      const box = chip.closest('[data-chips]'), field = box.dataset.chips, v = chip.dataset.v;
+      if (box.dataset.multi === 'true') { const cur = get(F, field) || []; const next = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]; set(F, field, next); chip.setAttribute('aria-pressed', next.includes(v)); }
+      else { const now = get(F, field) === v ? '' : v; set(F, field, now); $$('.chip', box).forEach(c => c.setAttribute('aria-pressed', c.dataset.v === now)); }
+      return;
+    }
+    const st = e.target.closest('[data-star]');
+    if (st) { const n = +st.dataset.star; F.rating = F.rating === n ? n - 1 : n; $$('#stars button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.star <= F.rating)); return; }
+    const ph = e.target.closest('.ph');
+    if (ph) {
+      const id = ph.dataset.ph; if (!confirm('この写真を外しますか？')) return;
+      PHOTO_KEYS.forEach(k => { if (F.photos[k]) F.photos[k] = F.photos[k].filter(x => x !== id); });
+      if (newPhotos.includes(id)) { newPhotos = newPhotos.filter(x => x !== id); db.deletePhoto(id); } else removedPhotos.push(id);
+      return refreshPhotos();
+    }
+    if (e.target.closest('#findShop')) return findShops();
+    if (e.target.closest('#pasteRead')) {
+      const text = $('#pasteText').value.trim(); if (!text) return toast('先に文字を貼り付けてください');
+      const item = parseLocal(text); F.type === 'home' ? applyBag(item) : applyMenu(item);
+      return toast('入れました。違う所は直してください');
+    }
+  });
+  form.addEventListener('keydown', e => { const seg = e.target.closest('.wheel .seg'); if (seg && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleFlavor(seg.dataset.id); } });
+  form.addEventListener('change', e => {
+    const f = e.target.files?.[0]; if (!f) return;
+    if (e.target.id === 'addPhoto') addPhotos([...e.target.files]);
+    if (e.target.id === 'menuShot') readPhoto('menu', f);
+    if (e.target.id === 'bagShot') readPhoto('bag', f);
+  });
+  const pad = $('#pad'); let drag = false;
+  pad.addEventListener('pointerdown', e => { drag = true; pad.setPointerCapture(e.pointerId); padMove(e); });
+  pad.addEventListener('pointermove', e => { if (drag) padMove(e); });
+  pad.addEventListener('pointerup', () => { drag = false; });
+  pad.addEventListener('pointercancel', () => { drag = false; });
+  $('#back').onclick = () => step > 0 ? showStep(step - 1) : cancelForm();
+  $('#next').onclick = () => step < STEPS.length - 1 ? showStep(step + 1) : saveForm();
 }
 
-// ---- 予備：写真の文字を貼り付けて、端末の中だけで読み取る ----
-function pasteBox(kind) {
-  return `<details class="paste" id="pasteBox"><summary>写真の文字を貼り付けて読み取る</summary>
-    <p class="hint">iPhoneなら、写真の文字を長押しして「コピー」し、ここに貼り付けます。</p>
-    <textarea id="pasteText" rows="4" placeholder="${kind === 'menu' ? '例：エチオピア ゲデオ　ウォッシュト　浅煎り　ジャスミン、レモン　680円' : '例：グアテマラ ウエウエテナンゴ　ブルボン　中深煎り　焙煎日 2026.11.20'}"></textarea>
-    <button type="button" class="act" id="pasteRead" data-kind="${kind}">貼り付けた文から入れる</button>
-  </details>`;
+async function findShops() {
+  const box = $('#shopList');
+  box.innerHTML = '<p class="busy">近くのお店を探しています…</p>';
+  try {
+    const p = await getPosition();
+    F.cafe.lat = p.latitude; F.cafe.lon = p.longitude;
+    const { shops } = await api(`/api/nearby?lat=${p.latitude}&lon=${p.longitude}`);
+    if (!shops.length) { box.innerHTML = '<p class="busy">近くに見つかりませんでした。店名を入力してください。</p>'; return; }
+    box.innerHTML = `<ul class="picklist">${shops.map((s, i) => `<li><button type="button" data-shop="${i}"><strong>${esc(s.name)}</strong><small>${s.distance}m</small></button></li>`).join('')}</ul>`;
+    $$('[data-shop]', box).forEach(b => b.onclick = () => {
+      const s = shops[+b.dataset.shop];
+      Object.assign(F.cafe, { shop: s.name, address: s.address || F.cafe.address || '', lat: s.lat, lon: s.lon });
+      syncFields(); box.innerHTML = '';
+    });
+  } catch (err) { box.innerHTML = `<p class="busy">${esc(err.message)}</p>`; }
 }
+
+async function readPhoto(kind, file) {
+  const box = $('#menuList');
+  box.innerHTML = '<p class="busy">読み取っています…（30秒ほど）</p>';
+  const blob = await shrinkImage(file, 1568, 0.85);
+  const id = uid(); await db.putPhoto(id, blob); newPhotos.push(id);
+  (F.photos[kind === 'menu' ? 'menu' : 'beans'] ??= []).push(id); refreshPhotos();
+  try {
+    const dataUrl = await blobToDataURL(blob);
+    const res = await api('/api/read', { method: 'POST', body: JSON.stringify({ kind, image: dataUrl.split(',')[1], mediaType: 'image/jpeg', shop: F.cafe?.shop || '' }) });
+    const items = res.items || [];
+    if (!items.length) { box.innerHTML = '<p class="busy">読み取れませんでした。写真は残したので、手で入力してください。</p>'; return; }
+    if (kind === 'bag') { applyBag(items[0]); box.innerHTML = ''; return toast('袋の内容を入れました'); }
+    if (items.length === 1) { applyMenu(items[0]); box.innerHTML = ''; return toast('メニューの内容を入れました'); }
+    box.innerHTML = `<p class="hint">飲んだものを選んでください。</p><ul class="picklist">${items.map((m, i) => `<li><button type="button" data-menu="${i}"><strong>${esc(m.name)}</strong><small>${esc([m.roast, m.price ? m.price + '円' : ''].filter(Boolean).join('・'))}</small></button></li>`).join('')}</ul>`;
+    $$('[data-menu]', box).forEach(b => b.onclick = () => { applyMenu(items[+b.dataset.menu]); box.innerHTML = ''; });
+  } catch (err) { box.innerHTML = `<p class="busy">${esc(err.message)}<br>写真は残したので、手で入力してください。</p>`; }
+}
+
 const ORIGIN_WORDS = ['エチオピア', 'ケニア', 'タンザニア', 'ルワンダ', 'ブルンジ', 'ウガンダ', 'イエメン', 'ブラジル', 'コロンビア', 'グアテマラ', 'コスタリカ', 'パナマ', 'ホンジュラス', 'エルサルバドル', 'ニカラグア', 'メキシコ', 'ペルー', 'ボリビア', 'エクアドル', 'ジャマイカ', 'ハワイ', 'インドネシア', 'スマトラ', 'マンデリン', 'スラウェシ', 'トラジャ', 'パプアニューギニア', '東ティモール', 'ベトナム', 'タイ', 'ミャンマー', '中国', '雲南', 'インド'];
 const ROAST_WORDS = [[/極深煎り/, 'イタリアン'], [/中深煎り/, 'フルシティ'], [/深煎り/, 'フレンチ'], [/中浅煎り/, 'ミディアム'], [/浅煎り/, 'ライト'], [/中煎り/, 'ハイ']];
 const PROCESS_WORDS = [[/嫌気|アナエロ/, 'アナエロビック'], [/パルプド|ハニー/, 'ハニー'], [/非水洗|ナチュラル|天日/, 'ナチュラル'], [/水洗|ウォッシュ/, 'ウォッシュト'], [/スマトラ式/, 'スマトラ式']];
@@ -410,195 +372,42 @@ export function parseLocal(text) {
   const process = PROCESS_WORDS.find(([re]) => re.test(t))?.[1] || '';
   const method = BREW_METHODS.find(m => t.includes(m)) || (/ドリップ/.test(t) ? 'ハンドドリップ' : '');
   const price = (t.match(/(\d[\d,]{2,})\s*円/) || t.match(/[¥￥]\s*(\d[\d,]*)/) || [])[1]?.replace(/,/g, '') || '';
-  const date = (t.match(/(20\d\d)[./年-](\d{1,2})[./月-](\d{1,2})/) || []);
+  const date = t.match(/(20\d\d)[./年-](\d{1,2})[./月-](\d{1,2})/) || [];
   const hits0 = FLAVOR_ITEMS.map(i => i.name).filter(n => t.includes(n));
-  const flavorHits = hits0.filter(n => !hits0.some(o => o !== n && o.includes(n)));   // 「ミルクチョコ」の中の「ミルク」は数えない
+  const flavorHits = hits0.filter(n => !hits0.some(o => o !== n && o.includes(n)));
   const noteLine = lines.find(l => /フレーバー|テイスト|味わい|ノート|香り/.test(l));
   const variety = ['ゲイシャ', 'ゲシャ', 'ブルボン', 'ティピカ', 'カトゥーラ', 'カトゥアイ', 'パカマラ', 'SL28', 'SL34', 'エアルーム', '在来種'].filter(v => t.includes(v)).join('・');
   const name = (lines.find(l => origin.some(o => l.includes(o))) || lines[0] || '').replace(/[¥￥]?\s*\d[\d,]*\s*円?$/, '').slice(0, 40).trim();
-  return {
-    name, origin: origin.join(' '), roast, process, method, price, variety,
+  return { name, origin: origin.join(' '), roast, process, method, price, variety,
     roastDate: date.length ? `${date[1]}-${String(date[2]).padStart(2, '0')}-${String(date[3]).padStart(2, '0')}` : '',
-    notes: noteLine ? noteLine.replace(/^.*?(フレーバー|テイスト|味わい|ノート|香り)[：:\s]*/, '') : flavorHits.join('、'),
-  };
+    notes: noteLine ? noteLine.replace(/^.*?(フレーバー|テイスト|味わい|ノート|香り)[：:\s]*/, '') : flavorHits.join('、') };
 }
-
-function refreshRatio() {
-  const el = $('#ratio'); if (!el) return;
-  const d = parseFloat(F.home.dose), w = parseFloat(F.home.water);
-  el.textContent = d > 0 && w > 0 ? `比率 1 : ${(w / d).toFixed(1)}` : '';
-}
-
-async function refreshPhotos() {
-  $('#photos').innerHTML = photoSlots();
-  $$('#photos .ph').forEach(async el => { const u = await photoURL(el.dataset.ph); if (u) el.style.backgroundImage = `url(${u})`; });
-}
-
-async function addPhotos(slot, files) {
-  for (const file of files) {
-    const blob = await shrinkImage(file);
-    const id = uid();
-    await db.putPhoto(id, blob);
-    newPhotos.push(id);
-    F.photos[slot].push(id);
-  }
-  refreshPhotos();
-}
-
-function bindForm() {
-  const form = $('#form');
-  form.addEventListener('input', e => {
-    const f = e.target.dataset.field; if (!f) return;
-    set(F, f, e.target.value);
-    if (f === 'home.dose' || f === 'home.water') refreshRatio();
-  });
-  form.addEventListener('click', e => {
-    const sg = e.target.closest('[data-sugg]');
-    if (sg) return toggleFlavor(sg.dataset.sugg);
-    if (e.target.closest('#propose')) return makeProposal();
-    if (e.target.closest('#acceptAll')) { proposal.forEach(p => { if (!F.flavors.includes(p.id)) F.flavors.push(p.id); }); refreshTasting(); return; }
-    const chip = e.target.closest('.chip');
-    if (chip?.dataset.flavor) return toggleFlavor(chip.dataset.flavor);
-    if (chip?.dataset.catKey) {
-      const box = chip.closest('[data-catpick]'); const field = box.dataset.catpick; const k = chip.dataset.catKey;
-      let cur = F[field] || [];
-      if (cur.includes(k)) cur = cur.filter(x => x !== k && !(k.indexOf('/') < 0 && x.startsWith(k + '/')));
-      else cur = [...cur, k];
-      F[field] = cur; box.outerHTML = catPicker(field); return;
-    }
-    if (chip?.id === 'again') { F.again = !F.again; chip.setAttribute('aria-pressed', F.again); return; }
-    if (chip?.id === 'selfRoast') {
-      F.home.selfRoast = !F.home.selfRoast; chip.setAttribute('aria-pressed', F.home.selfRoast);
-      $('#roasterBox').hidden = F.home.selfRoast; return;
-    }
-    if (chip) {
-      const box = chip.closest('[data-chips]'); const field = box.dataset.chips; const v = chip.dataset.v;
-      if (box.dataset.multi === 'true') {
-        const cur = get(F, field) || [];
-        let next = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v];
-        if (field === 'mainTastes' && next.length > 2) next = next.slice(-2);   // 主な味は2つまで
-        set(F, field, next);
-        $$('.chip', box).forEach(c => c.setAttribute('aria-pressed', next.includes(c.dataset.v)));
-      } else {
-        const now = get(F, field) === v ? '' : v; set(F, field, now);
-        $$('.chip', box).forEach(c => c.setAttribute('aria-pressed', c.dataset.v === now));
-      }
-      return;
-    }
-    const tab = e.target.closest('.cat-tabs [data-cat]');
-    if (tab) { activeCat = tab.dataset.cat; renderFlavorChips(); return; }
-    const seg = e.target.closest('.wheel .seg');
-    if (seg) { const it = ITEM_BY_ID[seg.dataset.id]; activeCat = it.cat.id; renderFlavorChips(); toggleFlavor(seg.dataset.id); return; }
-    const dot = e.target.closest('[data-score] button');
-    if (dot) {
-      const k = dot.parentElement.dataset.score, n = +dot.dataset.n;
-      F.scores[k] = F.scores[k] === n ? n - 1 : n;
-      $$('button', dot.parentElement).forEach(b => b.setAttribute('aria-pressed', +b.dataset.n <= F.scores[k]));
-      $('#radarBox').innerHTML = radarSVG(F.scores); return;
-    }
-    const st = e.target.closest('[data-star]');
-    if (st) { const n = +st.dataset.star; F.rating = F.rating === n ? n - 1 : n; $$('#stars button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.star <= F.rating)); return; }
-    const ph = e.target.closest('.ph');
-    if (ph) {
-      const id = ph.dataset.ph; const slot = ph.closest('[data-slot]').dataset.slot;
-      if (!confirm('この写真を外しますか？')) return;
-      F.photos[slot] = F.photos[slot].filter(x => x !== id);
-      if (newPhotos.includes(id)) { newPhotos = newPhotos.filter(x => x !== id); db.deletePhoto(id); } else removedPhotos.push(id);
-      refreshPhotos(); return;
-    }
-  });
-  form.addEventListener('keydown', e => { const seg = e.target.closest('.wheel .seg'); if (seg && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleFlavor(seg.dataset.id); } });
-  form.addEventListener('change', e => {
-    const k = e.target.dataset.add; if (k && e.target.files.length) addPhotos(k, [...e.target.files]);
-  });
-
-  $('#findShop')?.addEventListener('click', findShops);
-  $('#menuShot')?.addEventListener('change', e => e.target.files[0] && readPhoto('menu', e.target.files[0]));
-  $('#bagShot')?.addEventListener('change', e => e.target.files[0] && readPhoto('bag', e.target.files[0]));
-  $('#pasteRead')?.addEventListener('click', e => {
-    const text = $('#pasteText').value.trim();
-    if (!text) { toast('先に文字を貼り付けてください'); return; }
-    const item = parseLocal(text);
-    if (e.target.dataset.kind === 'bag') applyBag(item); else applyMenu(item);
-    $('#pasteBox').open = false;
-    toast('貼り付けた文から入れました。違う所は直してください');
-  });
-  $('#cancel').onclick = cancelForm;
-  $('#save').onclick = saveForm;
-}
-
-async function findShops() {
-  const box = $('#shopList');
-  box.innerHTML = `<p class="busy">現在地を確かめています…</p>`;
-  try {
-    const p = await getPosition();
-    F.cafe.lat = p.latitude; F.cafe.lon = p.longitude;
-    box.innerHTML = `<p class="busy">近くのお店を探しています…</p>`;
-    let shops;
-    try { shops = (await api(`/api/nearby?lat=${p.latitude}&lon=${p.longitude}`)).shops; }
-    catch { shops = await nearbyDirect(p.latitude, p.longitude); }
-    if (!shops.length) { box.innerHTML = `<p class="busy">近くにお店が見つかりませんでした。店名を入力してください（位置は記録しました）。</p>`; return; }
-    box.innerHTML = `<ul class="picklist">${shops.map((s, i) => `<li><button type="button" data-shop="${i}"><strong>${esc(s.name)}</strong><small>${s.distance}m${s.address ? '　' + esc(s.address) : ''}</small></button></li>`).join('')}</ul>`;
-    $$('[data-shop]', box).forEach(b => b.onclick = () => {
-      const s = shops[+b.dataset.shop];
-      Object.assign(F.cafe, { shop: s.name, address: s.address || F.cafe.address || '', lat: s.lat, lon: s.lon });
-      $('[data-field="cafe.shop"]').value = s.name; $('[data-field="cafe.address"]').value = F.cafe.address || '';
-      box.innerHTML = ''; toast(`${s.name} にしました`);
-    });
-  } catch (err) { box.innerHTML = `<p class="busy err">${esc(err.message)}</p>`; }
-}
-
-async function readPhoto(kind, file) {
-  const box = $('#menuList');
-  box.innerHTML = `<p class="busy">${kind === 'menu' ? 'メニュー' : '袋'}を読み取っています…（10秒ほど）</p>`;
-  const blob = await shrinkImage(file, 1568, 0.85);
-  const id = uid(); await db.putPhoto(id, blob); newPhotos.push(id);
-  const slot = kind === 'menu' ? 'menu' : 'beans'; F.photos[slot].push(id); refreshPhotos();
-  try {
-    const dataUrl = await blobToDataURL(blob);
-    const res = await api('/api/read', { method: 'POST', body: JSON.stringify({ kind, image: dataUrl.split(',')[1], mediaType: 'image/jpeg', shop: F.cafe?.shop || '' }) });
-    const items = res.items || [];
-    if (!items.length) { box.innerHTML = `<p class="busy">コーヒーの名前を読み取れませんでした。手で入力してください（写真は残しました）。</p>`; return; }
-    if (kind === 'bag') { applyBag(items[0]); box.innerHTML = ''; toast('袋の内容を入れました。違う所は直してください'); return; }
-    box.innerHTML = `<p class="hint">飲んだものをタップしてください。</p><ul class="picklist">${items.map((m, i) => `<li><button type="button" data-menu="${i}"><strong>${esc(m.name)}</strong><small>${esc([m.origin, m.process, m.roast, m.price ? m.price + '円' : ''].filter(Boolean).join('　'))}</small></button></li>`).join('')}</ul>`;
-    $$('[data-menu]', box).forEach(b => b.onclick = () => { applyMenu(items[+b.dataset.menu]); box.innerHTML = ''; toast('メニューの内容を入れました'); });
-  } catch (err) {
-    box.innerHTML = `<p class="busy err">${esc(err.message)}<br>写真は残しました。上の「写真の文字を貼り付けて読み取る」か、手で入力してください。</p>`;
-  }
-}
-
-function pickOption(v, list) { if (!v) return ''; return list.find(o => v.includes(o) || o.includes(v)) || ''; }
+const pickOption = (v, list) => !v ? '' : list.find(o => v.includes(o) || o.includes(v)) || '';
 function applyMenu(m) {
   Object.assign(F.cafe, {
     menuName: m.name || F.cafe.menuName, origin: m.origin || parseLocal(m.name || '').origin || F.cafe.origin,
     process: pickOption(m.process, PROCESSES) || F.cafe.process, roast: pickOption(m.roast, ROAST_LEVELS) || F.cafe.roast,
-    method: pickOption(m.method, BREW_METHODS) || F.cafe.method, price: m.price ? String(m.price) : F.cafe.price,
-    menuNotes: m.notes || F.cafe.menuNotes,
-  });
-  syncFields();
+    method: pickOption(m.method, BREW_METHODS) || F.cafe.method, price: m.price ? String(m.price) : F.cafe.price, menuNotes: m.notes || F.cafe.menuNotes });
+  proposal = null; syncFields();
 }
 function applyBag(b) {
   Object.assign(F.home, {
     bean: b.name || F.home.bean, roaster: b.roaster || F.home.roaster, origin: b.origin || parseLocal(b.name || '').origin || F.home.origin,
     variety: b.variety || F.home.variety, process: pickOption(b.process, PROCESSES) || F.home.process,
-    roast: pickOption(b.roast, ROAST_LEVELS) || F.home.roast, roastDate: b.roastDate || F.home.roastDate, bagNotes: b.notes || F.home.bagNotes,
-  });
-  syncFields();
+    roast: pickOption(b.roast, ROAST_LEVELS) || F.home.roast, roastDate: b.roastDate || F.home.roastDate, bagNotes: b.notes || F.home.bagNotes });
+  proposal = null; syncFields();
 }
 function syncFields() {
   $$('[data-field]').forEach(el => { el.value = get(F, el.dataset.field) ?? ''; });
   $$('[data-chips]').forEach(box => { if (box.dataset.multi === 'true') return; const v = get(F, box.dataset.chips); $$('.chip[data-v]', box).forEach(c => c.setAttribute('aria-pressed', c.dataset.v === v)); });
 }
-
 async function cancelForm() {
   for (const id of newPhotos) await db.deletePhoto(id);
   newPhotos = [];
   history.length > 1 ? history.back() : (location.hash = '#/');
 }
-
 async function saveForm() {
-  F.title = titleOf(F);
-  F.updatedAt = new Date().toISOString();
+  F.title = titleOf(F); F.updatedAt = new Date().toISOString();
   await db.putRecord(F);
   for (const id of removedPhotos) await db.deletePhoto(id);
   newPhotos = []; removedPhotos = [];
@@ -606,156 +415,95 @@ async function saveForm() {
   location.replace(`#/r/${F.id}`);
 }
 
-// ---------- 詳細 ----------
+// ---------- 一杯のページ ----------
+let pendingDraft = null;
+function recipeText(h) {
+  const d = parseFloat(h.dose), w = parseFloat(h.water);
+  return [h.dose && `豆${h.dose}g`, h.water && `湯${h.water}g`, d > 0 && w > 0 && `1:${(w / d).toFixed(1)}`, h.temp && `${h.temp}℃`, h.time].filter(Boolean).join('　');
+}
 async function renderDetail(id) {
   const r = await db.getRecord(id);
-  if (!r) { view.innerHTML = `<div class="empty"><p>この記録は見つかりませんでした。</p><a class="act" href="#/">一覧へ戻る</a></div>`; return; }
-  const cupUrl = await photoURL(r.photos?.cup?.[0] || firstPhoto(r));
-  const c = flavorCentroid(r.flavors || []);
-  const info = r.type === 'cafe'
-    ? [['店名', r.cafe.shop], ['場所', r.cafe.address], ['メニュー', r.cafe.menuName], ['産地', r.cafe.origin], ['精製', r.cafe.process], ['焙煎度', r.cafe.roast], ['淹れ方', [r.cafe.method, r.cafe.style].filter(Boolean).join('・')], ['値段', r.cafe.price ? r.cafe.price + '円' : ''], ['お店の説明', r.cafe.menuNotes], ['一緒に食べたもの', r.cafe.dessert]]
-    : [['豆', r.home.bean], ['焙煎', r.home.selfRoast ? '自家焙煎' : r.home.roaster], ['焙煎日', fmtDate(r.home.roastDate)], ['産地', r.home.origin], ['品種', r.home.variety], ['精製', r.home.process], ['焙煎度', r.home.roast], ['器具', [r.home.method, r.home.style].filter(Boolean).join('・')], ['レシピ', recipeText(r.home)], ['挽き目', r.home.grind], ['袋の説明', r.home.bagNotes], ['一緒に食べたもの', r.home.food]];
-  const catTags = list => (list || []).map(k => `<span class="tag" style="--c:${catColor(k)}">${esc(catLabel(k))}</span>`).join('');
-  const plainTags = list => (list || []).map(t => `<span class="tag plain">${esc(t)}</span>`).join('');
-  const notes = [
-    ['香り', catTags(r.aromaCats)],
-    ['主な味', plainTags(r.mainTastes)],
-    ...TERM_GROUPS.filter(g => g.id !== 'impression').map(g => [g.title, plainTags(r.terms?.[g.id])]),
-    ['風味', catTags(r.flavorCats)],
-    ['印象', plainTags(r.terms?.impression)],
-    ['好み', [r.rating ? `<span class="rate-inline">${stars(r.rating)}</span>` : '', r.again ? '<span class="tag plain">また飲みたい</span>' : ''].join('')],
-  ].filter(([, v]) => v);
-  const slots = PHOTO_SLOTS[r.type].filter(([k]) => r.photos?.[k]?.length);
-  const hasScores = ATTRS.some(a => r.scores?.[a.id]);
+  if (!r) { view.innerHTML = '<div class="empty"><p>この記録は見つかりませんでした。</p><a class="act" href="#/">ノートへ戻る</a></div>'; return; }
+  const cupUrl = await photoURL(firstPhoto(r));
+  const c = r.type === 'cafe' ? r.cafe : r.home;
+  const info = (r.type === 'cafe'
+    ? [['お店', c.shop], ['場所', c.address], ['産地', c.origin], ['精製', c.process], ['焙煎度', c.roast], ['淹れ方', [c.method, c.style].filter(Boolean).join('・')], ['値段', c.price ? c.price + '円' : ''], ['お店の説明', c.menuNotes], ['一緒に', c.dessert]]
+    : [['焙煎', c.selfRoast ? '自家焙煎' : c.roaster], ['焙煎日', fmtDate(c.roastDate)], ['産地', c.origin], ['品種', c.variety], ['精製', c.process], ['焙煎度', c.roast], ['淹れ方', [c.method, c.style].filter(Boolean).join('・')], ['レシピ', recipeText(c)], ['挽き目', c.grind], ['袋の説明', c.bagNotes], ['一緒に', c.food]]).filter(([, v]) => v);
+  const tags = l => (l || []).join('、');
+  const fine = [...TERM_GROUPS.map(g => [g.title, tags(r.terms?.[g.id])]), ['主な味', tags(r.mainTastes)], ['香り', tags((r.aromaCats || []).map(catLabel))]].filter(([, v]) => v);
+  const photos = allPhotos(r), hasScores = ATTRS.some(a => r.scores?.[a.id]);
+  const sent = summarySentence(r);
+  const dl = rows => `<dl class="info">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
   view.innerHTML = `
-    <header class="form-top">
-      <a class="back" href="#/">一覧</a>
-      <span></span>
-      <a class="back" href="#/edit/${r.id}">直す</a>
-    </header>
+    <header class="nav"><a class="nav-link" href="#/">ノート</a><a class="nav-link" href="#/edit/${r.id}">編集</a></header>
     <article class="detail">
-      <p class="kind ${r.type}">${r.type === 'cafe' ? 'お店の一杯' : '家の一杯'}　${fmtDate(r.date)}</p>
+      <div class="wheel-wrap hero">${wheelSVG(new Set(r.flavors || []), { photoUrl: cupUrl })}</div>
       <h1>${esc(titleOf(r))}</h1>
-      ${r.type === 'cafe' && r.cafe.menuName && r.cafe.shop ? `<p class="at">${esc(r.cafe.shop)}</p>` : ''}
-      ${r.rating ? `<p class="rate" aria-label="好み ${r.rating}">${stars(r.rating)}</p>` : ''}
-      <div class="wheel-wrap big">${wheelSVG(new Set(r.flavors || []), { photoUrl: cupUrl })}</div>
-      ${c ? `<p class="centroid">味の重心：<strong>${centroidLabel(c)}</strong></p>` : ''}
-      ${(r.flavors || []).length ? `<div class="tags">${r.flavors.map(id => { const it = ITEM_BY_ID[id]; return it ? `<span class="tag" style="--c:${it.cat.color}">${it.name}</span>` : ''; }).join('')}</div>` : ''}
-      ${notes.length ? `<section class="block"><h2>テイスティング</h2><dl class="tnotes">${notes.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></section>` : ''}
-      ${hasScores ? `<section class="block"><h2>感じた強さ</h2><div class="radar-box">${radarSVG(r.scores)}</div></section>` : ''}
-      ${r.memo ? `<section class="block"><h2>メモ</h2><p class="memo">${esc(r.memo).replace(/\n/g, '<br>')}</p></section>` : ''}
-      ${slots.length ? `<section class="block"><h2>写真</h2>${slots.map(([k, l]) => `<h3 class="ph-h">${l}</h3><div class="gallery">${r.photos[k].map(pid => `<button type="button" class="gph" data-full="${pid}" aria-label="${l}の写真を大きく見る"></button>`).join('')}</div>`).join('')}</section>` : ''}
-      <section class="block"><h2>くわしく</h2><dl class="info">${info.filter(([, v]) => v).map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-        ${r.type === 'cafe' && r.cafe.lat ? `<a class="maplink" href="https://www.google.com/maps/search/?api=1&query=${r.cafe.lat},${r.cafe.lon}" target="_blank" rel="noopener">地図で開く</a>` : ''}
-      </section>
+      <p class="d-sub">${esc(subOf(r))}</p>
+      ${sent.length ? `<p class="sent">${sent.join('<br>')}</p>` : ''}
+      ${r.rating ? `<p class="rate">${stars(r.rating)}</p>` : ''}
+      ${r.memo ? `<p class="memo">${esc(r.memo).replace(/\n/g, '<br>')}</p>` : ''}
+      <div class="disc">
+        ${photos.length ? `<details><summary>写真<span>${photos.length}枚</span></summary><div class="gallery">${photos.map(p => `<button type="button" class="gph" data-full="${p}" aria-label="写真を大きく見る"></button>`).join('')}</div></details>` : ''}
+        ${info.length ? `<details><summary>${r.type === 'cafe' ? 'お店とコーヒー' : '豆と淹れ方'}<span>${esc([c.process, c.roast].filter(Boolean).join('・'))}</span></summary>${dl(info)}${r.type === 'cafe' && c.lat ? `<a class="maplink" href="https://www.google.com/maps/search/?api=1&query=${c.lat},${c.lon}" target="_blank" rel="noopener">地図で開く</a>` : ''}</details>` : ''}
+        ${hasScores || fine.length ? `<details><summary>くわしい記録</summary>${hasScores ? `<div class="radar-box">${radarSVG(r.scores)}</div>` : ''}${fine.length ? dl(fine) : ''}</details>` : ''}
+      </div>
       <div class="detail-actions">
-        ${r.type === 'home' ? `<button type="button" class="act" id="again">同じ豆でもう一杯記録する</button>` : `<button type="button" class="act" id="again">このお店でもう一杯記録する</button>`}
+        <button type="button" class="act" id="again">${r.type === 'home' ? '同じ豆でもう一杯' : 'このお店でもう一杯'}</button>
         <button type="button" class="danger" id="del">この記録を消す</button>
       </div>
     </article>`;
-  $$('.gph').forEach(async el => { const u = await photoURL(el.dataset.full); if (u) el.style.backgroundImage = `url(${u})`; el.onclick = () => showFull(u); });
+  $$('.gph').forEach(async el => { const u = await photoURL(el.dataset.full); if (u) el.style.backgroundImage = `url(${u})`; el.onclick = () => { const o = $('#full'); o.innerHTML = `<img src="${u}" alt="">`; o.hidden = false; o.onclick = () => { o.hidden = true; o.innerHTML = ''; }; }; });
   $('#del').onclick = async () => {
     if (!confirm('この記録と写真を消します。元に戻せません。消しますか？')) return;
-    for (const pid of Object.values(r.photos || {}).flat()) await db.deletePhoto(pid);
+    for (const pid of allPhotos(r)) await db.deletePhoto(pid);
     await db.deleteRecord(r.id); toast('消しました'); location.hash = '#/';
   };
   $('#again').onclick = () => {
     const n = blankRecord(r.type);
-    if (r.type === 'home') n.home = { ...r.home, time: r.home.time };
-    else n.cafe = { shop: r.cafe.shop, address: r.cafe.address, lat: r.cafe.lat, lon: r.cafe.lon };
+    if (r.type === 'home') n.home = { ...r.home }; else n.cafe = { shop: r.cafe.shop, address: r.cafe.address, lat: r.cafe.lat, lon: r.cafe.lon };
     pendingDraft = n; location.hash = `#/new/${r.type}`;
   };
-}
-let pendingDraft = null;
-function recipeText(h) {
-  const d = parseFloat(h.dose), w = parseFloat(h.water);
-  return [h.dose && `豆${h.dose}g`, h.water && `湯${h.water}g`, d > 0 && w > 0 && `1:${(w / d).toFixed(1)}`, h.temp && `${h.temp}℃`, h.time && h.time].filter(Boolean).join('　');
-}
-function showFull(u) {
-  const o = $('#full'); o.innerHTML = `<img src="${u}" alt="">`; o.hidden = false;
-  o.onclick = () => { o.hidden = true; o.innerHTML = ''; };
 }
 
 // ---------- 味の地図 ----------
 async function renderMap() {
   const all = await db.allRecords();
-  const freq = {}; all.forEach(r => (r.flavors || []).forEach(id => freq[id] = (freq[id] || 0) + 1));
-  const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const max = top[0]?.[1] || 1;
+  const freq = {}; all.forEach(r => (r.flavors || []).forEach(id => { if (ITEM_BY_ID[id]) freq[id] = (freq[id] || 0) + 1; }));
+  const top = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 6), max = top[0]?.[1] || 1;
   const liked = all.filter(r => (r.rating || 0) >= 4).flatMap(r => r.flavors || []);
-  const likedC = flavorCentroid(liked);
-  const shops = {}; all.filter(r => r.type === 'cafe' && r.cafe?.shop).forEach(r => { const s = shops[r.cafe.shop] ??= { n: 0, sum: 0, k: 0 }; s.n++; if (r.rating) { s.sum += r.rating; s.k++; } });
-  const shopTop = Object.entries(shops).sort((a, b) => b[1].n - a[1].n).slice(0, 5);
-  const plotted = all.filter(r => r.scores?.acidity && r.scores?.bitterness && r.scores?.body).length;
   view.innerHTML = `
-    <header class="top"><div class="brand-row"><h1 class="brand">味の地図</h1><button type="button" class="bgm-btn" data-bgm-toggle aria-pressed="true"><span class="bgm-ico" aria-hidden="true"></span></button></div></header>
-    <section class="block">
-      <h2>一杯ずつの位置</h2>
-      <p class="hint">「強さ」で酸味・苦味・コクを付けた一杯が並びます（${plotted}杯）。点をタップすると記録が開きます。</p>
-      <div class="map-box">${tasteMapSVG(all)}</div>
-      <p class="legend"><span class="lg cafe"></span>お店　<span class="lg home"></span>家</p>
-    </section>
-    <section class="block">
-      <h2>好きな一杯の重心</h2>
-      <p class="hint">好み★4以上の一杯で選んだ風味を、まとめて円に置いたものです。</p>
-      ${liked.length ? `<div class="wheel-wrap">${wheelSVG(new Set(liked))}</div><p class="centroid">あなたの好み：<strong>${centroidLabel(likedC)}</strong></p>` : `<p class="busy">好み★4以上の記録が増えると、ここに好みの傾向が出ます。</p>`}
-    </section>
-    <section class="block">
-      <h2>よく感じる風味</h2>
-      ${top.length ? `<ul class="bars">${top.map(([id, n]) => { const it = ITEM_BY_ID[id]; return `<li><span>${it.name}</span><span class="bar"><span style="width:${n / max * 100}%;background:${it.cat.color}"></span></span><em>${n}</em></li>`; }).join('')}</ul>` : `<p class="busy">まだありません。</p>`}
-    </section>
-    ${shopTop.length ? `<section class="block"><h2>よく行くお店</h2><ul class="bars shops">${shopTop.map(([name, s]) => `<li><span>${esc(name)}</span><em>${s.n}杯${s.k ? '　平均★' + (s.sum / s.k).toFixed(1) : ''}</em></li>`).join('')}</ul></section>` : ''}
-  `;
+    <header class="nav"><span></span>${BGM_BTN}</header>
+    <h1 class="big">味の地図</h1>
+    <div class="map-box">${tasteMapSVG(all)}</div>
+    ${liked.length ? `<h2 class="sec">好きな一杯は、このあたり</h2><div class="wheel-wrap">${wheelSVG(new Set(liked))}</div><p class="centroid">${centroidLabel(flavorCentroid(liked))}</p>` : '<p class="hint center">★4以上の一杯が増えると、好みの傾向がここに出ます。</p>'}
+    ${top.length ? `<h2 class="sec">よく感じる風味</h2><ul class="bars">${top.map(([id, n]) => { const it = ITEM_BY_ID[id]; return `<li><span>${it.name}</span><span class="bar"><span style="width:${n / max * 100}%;background:${it.cat.color}"></span></span><em>${n}</em></li>`; }).join('')}</ul>` : ''}`;
 }
 
 // ---------- 設定 ----------
 async function renderSettings() {
-  const est = await navigator.storage?.estimate?.().catch(() => null);
   const all = await db.allRecords();
   view.innerHTML = `
-    <header class="top"><h1 class="brand">設定</h1></header>
-    <section class="block">
-      <h2>BGM</h2>
-      <p class="hint">カフェ風のピアノ曲を流します。最初に画面に触れたときから鳴り始めます。</p>
-      <button type="button" class="act bgm-switch" data-bgm-toggle aria-pressed="true"><span class="bgm-ico" aria-hidden="true"></span><span class="bgm-label">BGM オン</span></button>
-    </section>
-    <section class="block">
-      <h2>表紙</h2>
-      <div class="cover-pick">${COVERS.map(c => `<button type="button" class="cover-opt" data-cover="${c.id}" aria-pressed="${coverStyle() === c.id}"><strong>${c.name}</strong><small>${c.desc}</small></button>`).join('')}</div>
-      <a class="act" href="#/cover">表紙を見る</a>
-    </section>
-    <section class="block">
-      <h2>読み取りの合言葉<small>使う場合だけ</small></h2>
-      <p class="hint">メニューや豆の袋の読み取りは、設定なしで使えます。Cloudflare に合言葉（APP_TOKEN）を登録した場合だけ、同じものを入れてください。</p>
-      <label class="field"><span>合言葉</span><span class="in"><input type="password" id="tok" value="${esc(token())}" autocomplete="off"></span></label>
-      <button type="button" class="act" id="saveTok">合言葉を保存する</button>
-    </section>
-    <section class="block">
-      <h2>控え</h2>
-      <p class="hint">記録はこの端末の中だけにあります（${all.length}杯${est ? `、約${(est.usage / 1048576).toFixed(1)}MB` : ''}）。機種変更や消えたときに備えて、ときどき控えを書き出してください。写真も含まれます。</p>
-      <button type="button" class="act" id="exp">控えを書き出す</button>
-      <label class="act"><input type="file" accept="application/json,.json" id="imp" hidden>控えを読み込む</label>
-    </section>
-    <section class="block about">
-      <h2>このアプリについて</h2>
-      <p class="hint">近くのお店は OpenStreetMap のデータで探します。お店が出ないときは店名を入力してください。写真の読み取りは Cloudflare の AI を使います。風味の円は、このアプリ独自の分け方です。</p>
-      <p class="hint">BGM はこのアプリのためのオリジナル曲です。ピアノの音色：FluidR3 GM（Frank Wen、CC BY 3.0）。</p>
-    </section>`;
+    <header class="nav"><a class="nav-link" href="#/">ノート</a><span></span></header>
+    <h1 class="big">設定</h1>
+    <div class="disc open">
+      <button type="button" class="line" data-bgm-toggle aria-pressed="true">BGM<span class="bgm-label"></span></button>
+      <button type="button" class="line" id="exp">控えを書き出す<span>${all.length}杯</span></button>
+      <label class="line"><input type="file" accept="application/json,.json" id="imp" hidden>控えを読み込む<span></span></label>
+      <details><summary>そのほか</summary>
+        <label class="field"><span>読み取りの合言葉（Cloudflare に登録した場合だけ）</span><span class="in"><input type="password" id="tok" value="${esc(token())}" autocomplete="off"></span></label>
+        <button type="button" class="act" id="saveTok">合言葉を保存する</button>
+        <p class="hint">記録はこの端末の中にあります。機種変更に備えて、ときどき控えを書き出してください。近くのお店は OpenStreetMap、写真の読み取りは Cloudflare の AI を使います。BGM はオリジナル曲です（ピアノの音色：FluidR3 GM、Frank Wen、CC BY 3.0）。</p>
+      </details>
+    </div>`;
   if (navigator.storage?.persist) navigator.storage.persist();
-  $$('[data-cover]').forEach(b => b.onclick = () => {
-    try { localStorage.setItem('cover-style', b.dataset.cover); } catch {}
-    $$('[data-cover]').forEach(x => x.setAttribute('aria-pressed', x === b));
-    toast(`表紙を「${COVERS.find(c => c.id === b.dataset.cover).name}」にしました`);
-  });
-  $('#saveTok').onclick = () => { localStorage.setItem('ippai-token', $('#tok').value.trim()); toast('合言葉を保存しました'); };
+  $('#saveTok').onclick = () => { localStorage.setItem('ippai-token', $('#tok').value.trim()); toast('保存しました'); };
   $('#exp').onclick = exportAll;
   $('#imp').onchange = e => e.target.files[0] && importAll(e.target.files[0]);
 }
-
 async function exportAll() {
   toast('控えを作っています…');
-  const records = await db.allRecords();
-  const photos = {};
+  const records = await db.allRecords(); const photos = {};
   for (const p of await db.allPhotos()) photos[p.id] = await blobToDataURL(p.blob);
   const blob = new Blob([JSON.stringify({ app: 'ippai-kirokucho', version: 1, exportedAt: new Date().toISOString(), records, photos })], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `珈琲テイスティングノート_${today()}.json`; a.click();
@@ -771,29 +519,19 @@ async function importAll(file) {
   } catch (e) { toast('読み込めませんでした：' + e.message, 4000); }
 }
 
-// ---------- 表紙 ----------
-async function renderCover() {
-  const all = await db.allRecords();
-  view.innerHTML = coverHTML(coverStyle(), all);
-  const open = () => { try { sessionStorage.setItem('opened', '1'); } catch {} if (location.hash === '#/' || !location.hash) route(); else location.hash = '#/'; };
-  $('.cover').onclick = open;
+// ---------- 表紙・切り替え ----------
+function renderCover() {
+  view.innerHTML = coverHTML();
+  $('.cover').onclick = () => { try { sessionStorage.setItem('opened', '1'); } catch {} if (location.hash === '#/' || !location.hash) route(); else location.hash = '#/'; };
 }
-
-// ---------- 新規の選択 ----------
-function openNewSheet() {
-  const s = $('#sheet'); s.hidden = false;
-  s.onclick = e => { if (e.target === s || e.target.closest('a')) s.hidden = true; };
-}
-
-// ---------- ルーター ----------
 async function route() {
   const h = location.hash || '#/';
   $('#sheet').hidden = true;
   $$('.tabbar a').forEach(a => a.setAttribute('aria-current', h === a.getAttribute('href') ? 'page' : 'false'));
   let opened = true; try { opened = !!sessionStorage.getItem('opened'); } catch {}
   const showCover = h === '#/cover' || (!opened && h === '#/');
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', showCover ? '#3B2A20' : '#F5F6F4');
-  document.body.dataset.mode = showCover ? 'cover' : /^#\/(new|edit)/.test(h) ? 'form' : 'view';
+  $('meta[name=theme-color]')?.setAttribute('content', showCover ? '#3B2A20' : '#FBFAF8');
+  document.body.dataset.mode = showCover ? 'cover' : /^#\/(new|edit)/.test(h) ? 'form' : /^#\/(r\/|settings)/.test(h) ? 'page' : 'view';
   window.scrollTo(0, 0);
   if (showCover) return renderCover();
   let m;
@@ -808,7 +546,6 @@ async function route() {
 window.addEventListener('hashchange', route);
 new MutationObserver(() => syncButtons()).observe(view, { childList: true });
 initBgm();
-$('#newBtn').onclick = openNewSheet;
+$('#newBtn').onclick = () => { const s = $('#sheet'); s.hidden = false; s.onclick = e => { if (e.target === s || e.target.closest('a')) s.hidden = true; }; };
 route();
-
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
